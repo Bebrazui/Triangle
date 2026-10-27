@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
 /**
@@ -70,7 +71,7 @@ object CalcIcons {
             }
         }.build()
 
-    /** Clock с обратной стрелкой — история вычислений. */
+    /** ClockCounterClockwise — точный контур Phosphor Regular. */
     val History: ImageVector
         get() = ImageVector.Builder(
             name = "History",
@@ -80,18 +81,13 @@ object CalcIcons {
             viewportHeight = 256f
         ).apply {
             path(
-                fill = null,
-                stroke = SolidColor(Color.Black),
-                strokeLineWidth = 16f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
+                fill = SolidColor(Color.Black),
+                stroke = null
             ) {
-                moveTo(128f, 136f); lineTo(128f, 88f)
-                moveTo(167.6f, 167.6f); lineTo(128f, 128f)
-                moveTo(128f, 200f)
-                arcTo(72f, 72f, 0f, true, true, 186.9f, 69.1f)
-                moveTo(186.9f, 69.1f); lineTo(186.9f, 24f)
-                moveTo(186.9f, 69.1f); lineTo(232f, 69.1f)
+                addPathNodes(
+                    "M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Z" +
+                        "M128,32A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.59,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"
+                )
             }
         }.build()
 }

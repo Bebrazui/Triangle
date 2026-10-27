@@ -33,7 +33,8 @@ data class TriangleColors(
     val textSecondary: Color,
     val textTertiary: Color,
     val accentTerracotta: Color = AccentTerracotta,
-    val softOchre: Color = SoftOchre
+    val softOchre: Color = SoftOchre,
+    val keySurface: Color = Color(0xFF34302B)
 )
 
 val LightTriangleColors = TriangleColors(
@@ -43,7 +44,8 @@ val LightTriangleColors = TriangleColors(
     borderBold = LightBorderBold,
     textPrimary = LightTextPrimary,
     textSecondary = LightTextSecondary,
-    textTertiary = LightTextTertiary
+    textTertiary = LightTextTertiary,
+    keySurface = Color(0xFFEBE5DA)
 )
 
 val DarkTriangleColors = TriangleColors(
@@ -53,7 +55,8 @@ val DarkTriangleColors = TriangleColors(
     borderBold = DarkBorderBold,
     textPrimary = DarkTextPrimary,
     textSecondary = DarkTextSecondary,
-    textTertiary = DarkTextTertiary
+    textTertiary = DarkTextTertiary,
+    keySurface = Color(0xFF34302B)
 )
 
 val LocalTriangleColors = compositionLocalOf { LightTriangleColors }
@@ -81,3 +84,6 @@ val TextTertiary: Color
 
 val AccentColor: Color
     @Composable get() = LocalTriangleColors.current.accentTerracotta
+
+val KeySurface: Color
+    @Composable get() = LocalTriangleColors.current.keySurface

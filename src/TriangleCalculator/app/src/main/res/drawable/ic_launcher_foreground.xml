@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Треугольник — общий знак экосистемы Triangle OS -->
+    <path
+        android:fillColor="#FFCC5A36"
+        android:pathData="M54,26L82,76L26,76Z" />
+    <!-- Знак равенства внутри — намёк на калькулятор -->
+    <path
+        android:strokeColor="#FFF7F5EE"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:pathData="M43,54L65,54" />
+    <path
+        android:strokeColor="#FFF7F5EE"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:pathData="M43,63L65,63" />
+</vector>

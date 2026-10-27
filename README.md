@@ -1,12 +1,13 @@
 # Triangle OS Workspace
 
 Рабочая среда для сборки кастомной Treble GSI прошивки на базе AOSP 15
-и двух собственных приложений: TriangleSettings и TriangleLauncher.
+и собственных приложений экосистемы Triangle OS.
 
 ## Структура каталогов
 
 - `src/TriangleSettings/` — исходники системных настроек (`com.android.settings`), Kotlin + Compose.
 - `src/TriangleLauncher/` — исходники лаунчера (`org.triangle.launcher`), Kotlin + Compose.
+- `src/TriangleCalculator/` — калькулятор (`org.triangle.calculator`), Kotlin + Compose, тот же стиль и палитра.
 - `tools/` — рабочие утилиты автоматизации (подпись системных APK).
 - `tools/legacy/` — исторические одноразовые скрипты (не использовать, оставлены для истории).
 - `bootanim/` — загрузочная анимация и Magisk-модуль.

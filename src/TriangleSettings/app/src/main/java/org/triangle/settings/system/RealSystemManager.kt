@@ -1,6 +1,7 @@
 package org.triangle.settings.system
 
 import android.app.UiModeManager
+import android.app.AppOpsManager
 import android.bluetooth.BluetoothAdapter
 import android.content.ContentResolver
 import android.content.Context
@@ -27,6 +28,9 @@ import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.text.format.Formatter
+
+/** Имя appops-операции «разрешить уведомления» (AppOpsManager.OPSTR_POST_NOTIFICATION). */
+private const val OP_POST_NOTIFICATION = "android:post_notification"
 
 data class RealAppItem(
     val packageName: String,
@@ -1181,6 +1185,93 @@ class RealSystemManager(private val context: Context) {
         } catch (e: Exception) { e.printStackTrace() }
     }
 
+    // Доступ к уведомлениям (NotificationListenerService)
+    private fun notificationListenerComponent(): android.content.ComponentName =
+        android.content.ComponentName(
+            context,
+            org.triangle.settings.notification.NotificationLogService::class.java
+        )
+
+    /**
+     * Доступ к уведомлениям включён? Источник правды — список
+     * enabled_notification_listeners: он меняется сразу, тогда как служба
+     * подключается с задержкой.
+     */
+    fun isNotificationListenerEnabled(): Boolean {
+        return try {
+            val current = Settings.Secure.getString(
+                context.contentResolver,
+                "enabled_notification_listeners"
+            ).orEmpty()
+            val flat = notificationListenerComponent().flattenToString()
+            current.split(":").any { it.equals(flat, ignoreCase = true) }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Включает/выключает наш слушатель в системном списке доступа. */
+    fun setNotificationListenerEnabled(enable: Boolean): Boolean {
+        return try {
+            val flat = notificationListenerComponent().flattenToString()
+            val current = Settings.Secure.getString(
+                context.contentResolver,
+                "enabled_notification_listeners"
+            ).orEmpty()
+            val parts = current.split(":")
+                .filter { it.isNotBlank() }
+                .toMutableList()
+            if (enable) {
+                if (parts.none { it.equals(flat, ignoreCase = true) }) parts.add(flat)
+            } else {
+                parts.removeAll { it.equals(flat, ignoreCase = true) }
+            }
+            Settings.Secure.putString(
+                context.contentResolver,
+                "enabled_notification_listeners",
+                parts.joinToString(":")
+            )
+            isNotificationListenerEnabled()
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "cannot change listener access", e)
+            false
+        }
+    }
+
+    /** Служба действительно подключена к системе прямо сейчас. */
+    fun isNotificationListenerConnected(): Boolean =
+        org.triangle.settings.notification.NotificationLogService.connected
+
+    /**
+     * Может ли приложение менять appops-режимы. MANAGE_APP_OPS_MODES — привилегированное
+     * разрешение: на обычной установке оно не выдаётся, поэтому переключать
+     * уведомления чужих приложений можно только после интеграции в прошивку.
+     */
+    fun canManageAppOps(): Boolean = try {
+        context.checkSelfPermission("android.permission.MANAGE_APP_OPS_MODES") ==
+            PackageManager.PERMISSION_GRANTED
+    } catch (e: Exception) {
+        false
+    }
+
+    /**
+     * Разрешены ли уведомления конкретному приложению (appops POST_NOTIFICATION),
+     * а не нашему собственному процессу.
+     */
+    fun isAppNotificationsAllowed(packageName: String): Boolean {
+        return try {
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+            val uid = context.packageManager.getPackageUid(packageName, 0)
+            appOps.unsafeCheckOpNoThrow(
+                OP_POST_NOTIFICATION,
+                uid,
+                packageName
+            ) == AppOpsManager.MODE_ALLOWED
+        } catch (e: Exception) {
+            true
+        }
+    }
+
     // Список приложений с разрешением на уведомления
     data class AppNotificationStatus(
         val appName: String,
@@ -1193,7 +1284,6 @@ class RealSystemManager(private val context: Context) {
         val list = mutableListOf<AppNotificationStatus>()
         try {
             val pm = context.packageManager
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
             val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
             for (app in packages) {
                 // Исключаем чисто внутренние системные библиотеки без UI
@@ -1203,11 +1293,7 @@ class RealSystemManager(private val context: Context) {
 
                 val appName = pm.getApplicationLabel(app).toString()
                 val icon = pm.getApplicationIcon(app)
-                val enabled = if (nm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    nm.areNotificationsEnabled()
-                } else {
-                    true
-                }
+                val enabled = isAppNotificationsAllowed(app.packageName)
                 list.add(AppNotificationStatus(appName, app.packageName, icon, enabled))
             }
         } catch (e: Exception) { e.printStackTrace() }
@@ -2330,8 +2416,7 @@ class RealSystemManager(private val context: Context) {
             val installTime = dateFormat.format(java.util.Date(packageInfo.firstInstallTime))
             val updateTime = dateFormat.format(java.util.Date(packageInfo.lastUpdateTime))
 
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
-            val notifs = nm?.areNotificationsEnabled() ?: true
+            val notifs = isAppNotificationsAllowed(pkg)
 
             val vCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 packageInfo.longVersionCode
@@ -2633,20 +2718,24 @@ class RealSystemManager(private val context: Context) {
     }
 
     fun setAppNotificationsEnabled(pkg: String, enable: Boolean): Boolean {
-        val op = if (enable) "allow" else "ignore"
-        val cmd = "appops set $pkg POST_NOTIFICATION $op; pm ${if (enable) "grant" else "revoke"} $pkg android.permission.POST_NOTIFICATIONS"
-        val rootOk = executeRootCommand(cmd)
-        if (rootOk) return true
-
+        val targetMode = if (enable) AppOpsManager.MODE_ALLOWED else AppOpsManager.MODE_IGNORED
         return try {
-            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
             val uid = context.packageManager.getPackageUid(pkg, 0)
-            val mode = if (enable) android.app.AppOpsManager.MODE_ALLOWED else android.app.AppOpsManager.MODE_IGNORED
-            val setModeMethod = appOps?.javaClass?.getMethod("setMode", String::class.java, Int::class.javaPrimitiveType, String::class.java, Int::class.javaPrimitiveType)
-            setModeMethod?.invoke(appOps, "android:post_notification", uid, pkg, mode)
-            true
+            // setMode(String, int, String, int) доступен только системным
+            // приложениям (MANAGE_APP_OPS_MODES) и скрыт из публичного SDK.
+            val setMode = AppOpsManager::class.java.getMethod(
+                "setMode",
+                String::class.java,
+                Int::class.javaPrimitiveType,
+                String::class.java,
+                Int::class.javaPrimitiveType
+            )
+            setMode.invoke(appOps, OP_POST_NOTIFICATION, uid, pkg, targetMode)
+            isAppNotificationsAllowed(pkg) == enable
         } catch (e: Exception) {
-            setAppPermission(pkg, "android.permission.POST_NOTIFICATIONS", enable)
+            android.util.Log.w("RealSystemManager", "cannot change notifications for $pkg", e)
+            false
         }
     }
 

@@ -51,11 +51,14 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.triangle.settings.notification.NotificationLog
 import org.triangle.settings.system.RealAppItem
 import org.triangle.settings.system.RealSystemManager
 import org.triangle.settings.ui.icons.Phosphor
@@ -4514,7 +4517,8 @@ fun AppNotificationSettingsSubScreen(
     val context = LocalContext.current
     val detail = remember(packageName) { systemManager.getAppDetailInfo(packageName) }
     var notifsEnabled by remember(packageName) { mutableStateOf(detail?.isNotificationsEnabled ?: true) }
-    var channels by remember(packageName) { mutableStateOf(systemManager.getAppNotificationChannels(packageName)) }
+    val canManageAppOps = remember { systemManager.canManageAppOps() }
+    val journalChannels = remember(packageName) { NotificationLog.channelsFor(context, packageName) }
 
     SubScreenScaffold(title = "Уведомления", onBack = onBack) {
         // Инфо-карточка приложения
@@ -4567,29 +4571,35 @@ fun AppNotificationSettingsSubScreen(
         // Главный переключатель уведомлений приложения
         item {
             SettingCardGroup {
-                SettingToggleRow(
-                    title = "Все уведомления ${detail?.appName ?: ""}",
-                    subtitle = if (notifsEnabled) "Приложению разрешено отправлять уведомления" else "Все уведомления приложения заблокированы",
-                    checked = notifsEnabled,
-                    onCheckedChange = { isChecked ->
-                        val success = systemManager.setAppNotificationsEnabled(packageName, isChecked)
-                        if (success) {
-                            notifsEnabled = isChecked
-                            channels = systemManager.getAppNotificationChannels(packageName)
-                        } else {
-                            Toast.makeText(context, "Не удалось изменить статус уведомлений", Toast.LENGTH_SHORT).show()
+                if (canManageAppOps) {
+                    SettingToggleRow(
+                        title = "Все уведомления ${detail?.appName ?: ""}",
+                        subtitle = if (notifsEnabled) "Приложению разрешено отправлять уведомления" else "Все уведомления приложения заблокированы",
+                        checked = notifsEnabled,
+                        onCheckedChange = { isChecked ->
+                            if (systemManager.setAppNotificationsEnabled(packageName, isChecked)) {
+                                notifsEnabled = isChecked
+                            } else {
+                                Toast.makeText(context, "Не удалось изменить статус уведомлений", Toast.LENGTH_SHORT).show()
+                            }
                         }
-                    }
-                )
+                    )
+                } else {
+                    SettingSimpleRow(
+                        title = "Все уведомления ${detail?.appName ?: ""}",
+                        subtitle = (if (notifsEnabled) "Разрешены" else "Заблокированы") +
+                            " · изменять чужие приложения нельзя без системной привилегии"
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(14.dp))
         }
 
-        // Каналы уведомлений (Notification Channels)
-        if (notifsEnabled && channels.isNotEmpty()) {
+        // Каналы определяются по реальным уведомлениям из журнала
+        if (journalChannels.isNotEmpty()) {
             item {
                 Text(
-                    text = "КАТЕГОРИИ УВЕДОМЛЕНИЙ",
+                    text = "КАНАЛЫ В ЖУРНАЛЕ",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextSecondary,
@@ -4597,17 +4607,26 @@ fun AppNotificationSettingsSubScreen(
                     modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
                 )
                 SettingCardGroup {
-                    channels.forEachIndexed { index, channel ->
+                    journalChannels.forEachIndexed { index, (channelId, count) ->
                         SettingSimpleRow(
-                            title = channel.name,
-                            subtitle = "Канал: ${channel.id}"
+                            title = channelId,
+                            subtitle = "Уведомлений в журнале: $count"
                         )
-                        if (index < channels.lastIndex) {
+                        if (index < journalChannels.lastIndex) {
                             HorizontalDivider(color = BorderColor, thickness = 1.dp)
                         }
                     }
                 }
                 Spacer(modifier = Modifier.height(32.dp))
+            }
+        } else {
+            item {
+                Text(
+                    text = "Каналы появятся здесь, когда приложение пришлёт уведомление, а в разделе «Уведомления» будет включён доступ к журналу.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 12.sp,
+                    color = TextTertiary
+                )
             }
         }
     }
@@ -7674,8 +7693,17 @@ fun NotificationsSubScreen(
     var bubbles by remember { mutableStateOf(systemManager.isNotificationBubblesOn()) }
     var snooze by remember { mutableStateOf(systemManager.isNotificationSnoozeOn()) }
     var flashNotif by remember { mutableStateOf(systemManager.isFlashNotificationOn()) }
-    val isHistoryOn = remember { systemManager.isNotificationHistoryOn() }
+    var listenerEnabled by remember { mutableStateOf(systemManager.isNotificationListenerEnabled()) }
+    var listenerConnected by remember { mutableStateOf(systemManager.isNotificationListenerConnected()) }
     val lockscreenMode = remember { systemManager.getLockscreenNotificationMode() }
+    val context = LocalContext.current
+
+    LaunchedEffect(listenerEnabled) {
+        while (listenerEnabled) {
+            listenerConnected = systemManager.isNotificationListenerConnected()
+            delay(1500)
+        }
+    }
 
     val lockscreenSubtitle = when (lockscreenMode) {
         0 -> "Не показывать"
@@ -7684,6 +7712,28 @@ fun NotificationsSubScreen(
     }
 
     SubScreenScaffold(title = stringResource(R.string.notifications_title), onBack = onBack) {
+        // Доступ к уведомлениям: без него системный журнал недоступен
+        item {
+            SettingCardGroup {
+                SettingToggleRow(
+                    title = "Доступ к уведомлениям",
+                    subtitle = when {
+                        listenerEnabled && listenerConnected -> "Подключено · журнал записывается"
+                        listenerEnabled -> "Включено, служба подключается…"
+                        else -> "Выключено · история не записывается"
+                    },
+                    checked = listenerEnabled,
+                    onCheckedChange = { enabled ->
+                        if (systemManager.setNotificationListenerEnabled(enabled)) {
+                            listenerEnabled = enabled
+                        } else {
+                            Toast.makeText(context, "Не удалось изменить доступ", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+        }
+
         // Управление приложениями и журналом
         item {
             SettingCardGroup {
@@ -7697,7 +7747,13 @@ fun NotificationsSubScreen(
                 SettingItem(
                     icon = Phosphor.Bell,
                     title = "История уведомлений",
-                    subtitle = if (isHistoryOn) "Включена (недавние оповещения)" else "Отключена",
+                    subtitle = when {
+                        !listenerEnabled -> "Нужен доступ к уведомлениям"
+                        else -> {
+                            val count = NotificationLog.entries(context).size
+                            if (count == 0) "Журнал пуст" else "Записей в журнале: $count"
+                        }
+                    },
                     onClick = { onNavigate(Screen.NOTIFICATION_HISTORY) }
                 )
             }
@@ -7767,6 +7823,7 @@ fun AppNotificationsSubScreen(
     var apps by remember { mutableStateOf<List<RealSystemManager.AppNotificationStatus>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val canManageAppOps = remember { systemManager.canManageAppOps() }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -7780,6 +7837,16 @@ fun AppNotificationsSubScreen(
     val filteredApps = remember(apps, searchQuery) {
         if (searchQuery.isBlank()) apps
         else apps.filter { it.appName.contains(searchQuery, ignoreCase = true) || it.packageName.contains(searchQuery, ignoreCase = true) }
+    }
+
+    // Реальная статистика из журнала: сколько каналов и записей встречалось у приложения.
+    val logStats = remember(apps) {
+        NotificationLog.entries(context)
+            .groupBy { it.packageName }
+            .mapValues { (_, list) ->
+                val channelCount = list.map { it.channelId }.filter { it.isNotEmpty() }.distinct().size
+                channelCount to list.size
+            }
     }
 
     SubScreenScaffold(title = "Уведомления приложений", onBack = onBack) {
@@ -7816,6 +7883,18 @@ fun AppNotificationsSubScreen(
             }
         }
 
+        if (!canManageAppOps) {
+            item {
+                Text(
+                    text = "Переключатели недоступны: системе не разрешено менять уведомления чужих приложений без привилегии MANAGE_APP_OPS_MODES. Ниже показано фактическое состояние.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 12.sp,
+                    color = TextTertiary,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                )
+            }
+        }
+
         if (apps.isEmpty()) {
             item {
             Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -7826,22 +7905,23 @@ fun AppNotificationsSubScreen(
             item {
                 SettingCardGroup {
                     filteredApps.forEachIndexed { index, app ->
+                        val stats = logStats[app.packageName]
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    // Открываем нативный экран управления уведомлениями для конкретного приложения
                                     try {
-                                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                            putExtra(Settings.EXTRA_APP_PACKAGE, app.packageName)
-                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                        }
-                                        context.startActivity(intent)
+                                        context.startActivity(
+                                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                data = android.net.Uri.parse("package:${app.packageName}")
+                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                            }
+                                        )
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "Не удалось открыть настройки", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Не удалось открыть приложение", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                                .padding(16.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
@@ -7852,17 +7932,44 @@ fun AppNotificationsSubScreen(
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = if (app.areNotificationsEnabled) "Включены" else "Заблокированы",
+                                    text = buildString {
+                                        append(if (app.areNotificationsEnabled) "Включены" else "Заблокированы")
+                                        if (stats != null) {
+                                            append(" · ")
+                                            append(
+                                                if (stats.first > 0) "${stats.first} каналов в журнале"
+                                                else "${stats.second} записей в журнале"
+                                            )
+                                        }
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontSize = 13.sp,
                                     color = if (app.areNotificationsEnabled) TextSecondary else AccentTerracotta
                                 )
                             }
-                            Icon(
-                                imageVector = Phosphor.CaretRight,
-                                contentDescription = null,
-                                tint = TextSecondary,
-                                modifier = Modifier.size(16.dp)
+                            Switch(
+                                checked = app.areNotificationsEnabled,
+                                enabled = canManageAppOps,
+                                onCheckedChange = { enabled ->
+                                    if (systemManager.setAppNotificationsEnabled(app.packageName, enabled)) {
+                                        apps = apps.map {
+                                            if (it.packageName == app.packageName) {
+                                                it.copy(areNotificationsEnabled = enabled)
+                                            } else {
+                                                it
+                                            }
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "Система не разрешила изменение", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = PaperBackground,
+                                    checkedTrackColor = BorderBold,
+                                    uncheckedThumbColor = TextSecondary,
+                                    uncheckedTrackColor = PaperBackground,
+                                    uncheckedBorderColor = BorderColor
+                                )
                             )
                         }
                         if (index < filteredApps.size - 1) {
@@ -7880,57 +7987,207 @@ fun NotificationHistorySubScreen(
     systemManager: RealSystemManager,
     onBack: () -> Unit
 ) {
-    var historyEnabled by remember { mutableStateOf(systemManager.isNotificationHistoryOn()) }
+    val context = LocalContext.current
+    var listenerEnabled by remember { mutableStateOf(systemManager.isNotificationListenerEnabled()) }
+    var systemHistory by remember { mutableStateOf(systemManager.isNotificationHistoryOn()) }
+    var entries by remember { mutableStateOf(NotificationLog.entries(context)) }
+
+    LaunchedEffect(listenerEnabled) {
+        while (listenerEnabled) {
+            entries = NotificationLog.entries(context)
+            delay(2000)
+        }
+    }
 
     SubScreenScaffold(title = "История уведомлений", onBack = onBack) {
         item {
             SettingCardGroup {
                 SettingToggleRow(
-                    title = "Использовать историю уведомлений",
-                    subtitle = "Сохранять журнал всех входящих оповещений за последние 24 часа",
-                    checked = historyEnabled,
+                    title = "Записывать уведомления",
+                    subtitle = if (listenerEnabled) "TriangleSettings слушает системные оповещения" else "Выключено · новые записи не появляются",
+                    checked = listenerEnabled,
+                    onCheckedChange = { enabled ->
+                        if (systemManager.setNotificationListenerEnabled(enabled)) {
+                            listenerEnabled = enabled
+                            entries = NotificationLog.entries(context)
+                        } else {
+                            Toast.makeText(context, "Не удалось изменить доступ", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                SettingToggleRow(
+                    title = "Системный журнал Android",
+                    subtitle = "Параметр notification_history_enabled для SystemUI",
+                    checked = systemHistory,
                     onCheckedChange = {
-                        historyEnabled = it
+                        systemHistory = it
                         systemManager.setNotificationHistory(it)
                     }
                 )
             }
         }
 
-        item {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = SurfaceCard,
-                border = BorderStroke(1.dp, BorderColor),
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+        if (entries.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Phosphor.Bell,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = if (historyEnabled) "Нет недавних уведомлений" else "История отключена",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (historyEnabled) "Новые уведомления будут отображаться в этом списке" else "Включите переключатель выше для записи оповещений",
+                        text = "Записей: ${entries.size}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "Очистить",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 13.sp,
+                        color = AccentTerracotta,
+                        modifier = Modifier.clickable {
+                            NotificationLog.clear(context)
+                            entries = emptyList()
+                        }
                     )
                 }
             }
+            item {
+                SettingCardGroup {
+                    entries.take(100).forEachIndexed { index, entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    try {
+                                        context.startActivity(
+                                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                data = android.net.Uri.parse("package:${entry.packageName}")
+                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                            }
+                                        )
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Не удалось открыть приложение", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = entry.appName,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontSize = 14.sp,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = formatTimeAgo(entry.postedAt),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontSize = 12.sp,
+                                        color = TextTertiary
+                                    )
+                                }
+                                if (entry.title.isNotEmpty()) {
+                                    Text(
+                                        text = entry.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontSize = 15.sp,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (entry.text.isNotEmpty()) {
+                                    Text(
+                                        text = entry.text,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontSize = 13.sp,
+                                        color = TextSecondary,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (entry.channelId.isNotEmpty()) {
+                                    Text(
+                                        text = "канал: ${entry.channelId}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontSize = 11.sp,
+                                        color = TextTertiary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        if (index < entries.take(100).lastIndex) {
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        }
+                    }
+                }
+            }
+        } else {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = SurfaceCard,
+                    border = BorderStroke(1.dp, BorderColor),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Phosphor.Bell,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (listenerEnabled) "Нет записанных уведомлений" else "Запись выключена",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (listenerEnabled) {
+                                "Новые оповещения появятся здесь — журнал ведёт само приложение"
+                            } else {
+                                "Включите «Записывать уведомления», чтобы видеть входящие оповещения"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+/** Относительное время для журнала уведомлений. */
+fun formatTimeAgo(timestamp: Long): String {
+    val diff = System.currentTimeMillis() - timestamp
+    if (diff < 0) return "только что"
+    val minutes = diff / 60_000
+    val hours = diff / 3_600_000
+    val days = diff / 86_400_000
+    return when {
+        minutes < 1 -> "только что"
+        minutes < 60 -> "$minutes мин назад"
+        hours < 24 -> "$hours ч назад"
+        days < 7 -> "$days дн назад"
+        else -> java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(timestamp))
     }
 }
 

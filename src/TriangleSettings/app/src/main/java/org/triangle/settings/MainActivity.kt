@@ -3326,7 +3326,7 @@ fun BatteryUsageSubScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Отображаются приложения, оказавшие наибольшее влияние на аккумулятор",
+                        text = "Данные системной службы BatteryUsageStats: расход в мА·ч и доля в суммарном расходе приложений с последней зарядки",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                         fontSize = 13.sp
@@ -3352,7 +3352,7 @@ fun BatteryUsageSubScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text(text = "Нет данных об использовании", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        Text(text = "Система не предоставила статистику батареи", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
                     }
                 }
             }
@@ -3407,7 +3407,13 @@ fun BatteryUsageSubScreen(
                                     color = TextPrimary
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
-                                val timeText = if (app.foregroundTimeMinutes > 0) "${app.foregroundTimeMinutes} мин. активно" else "Фоновый режим"
+                                val timeText = if (app.consumedMah > 0.0) {
+                                    "≈ %.2f мА·ч".format(app.consumedMah)
+                                } else if (app.foregroundTimeMinutes > 0) {
+                                    "${app.foregroundTimeMinutes} мин. активно"
+                                } else {
+                                    "Нет данных об активности"
+                                }
                                 Text(
                                     text = timeText,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -3416,13 +3422,20 @@ fun BatteryUsageSubScreen(
                                 )
                             }
 
-                            Text(
-                                text = "%.1f%%".format(app.percentage),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = TextPrimary
-                            )
+                            val pctText = when {
+                                app.percentage < 0f -> ""
+                                app.percentage > 0f && app.percentage < 0.1f -> "<0,1%"
+                                else -> "%.1f%%".format(app.percentage)
+                            }
+                            if (pctText.isNotEmpty()) {
+                                Text(
+                                    text = pctText,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = TextPrimary
+                                )
+                            }
                         }
                         if (index < usageList.lastIndex) {
                             HorizontalDivider(color = BorderColor, thickness = 1.dp)
@@ -3442,7 +3455,6 @@ fun StorageSubScreen(
 ) {
     val breakdown = remember { systemManager.getDetailedStorageBreakdown() }
     val context = LocalContext.current
-    val appVersion = remember { systemManager.getAppVersionName() }
 
     SubScreenScaffold(title = stringResource(R.string.storage_title), onBack = onBack) {
         // Большой блок заполнения накопителя
@@ -3551,7 +3563,7 @@ fun StorageSubScreen(
                 SettingItem(
                     icon = Phosphor.Palette,
                     title = "Изображения и медиафайлы",
-                    subtitle = breakdown.mediaFormatted,
+                    subtitle = if (breakdown.hasMediaAccess) breakdown.mediaFormatted else "Размер недоступен без доступа к файлам",
                     onClick = {
                         try {
                             val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -3579,7 +3591,7 @@ fun StorageSubScreen(
                 SettingItem(
                     icon = Phosphor.HardDrive,
                     title = "Загрузки и документы",
-                    subtitle = breakdown.downloadsFormatted,
+                    subtitle = if (breakdown.hasMediaAccess) breakdown.downloadsFormatted else "Размер недоступен без доступа к файлам",
                     onClick = {
                         try {
                             val intent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
@@ -3593,19 +3605,22 @@ fun StorageSubScreen(
                 )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
 
-                // Системный раздел
+                // Системный раздел и всё неизмеренное
                 SettingSimpleRow(
-                    title = "Система и прошивка",
-                    subtitle = "${breakdown.systemFormatted} · Образ Triangle OS $appVersion GSI"
-                )
-                HorizontalDivider(color = BorderColor, thickness = 1.dp)
-
-                // Прочее
-                SettingSimpleRow(
-                    title = "Другие файлы и кэш",
-                    subtitle = breakdown.otherFormatted
+                    title = "Система и прочие данные",
+                    subtitle = "${breakdown.systemFormatted} · данные приложений, кэш и системные файлы"
                 )
             }
+        }
+
+        item {
+            Text(
+                text = "«Приложения» — размер APK и split-APK. Данные приложений и кэш учтены в «Система и прочие данные».",
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 11.sp,
+                color = TextTertiary,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
         }
 
         // Системные действия с хранилищем

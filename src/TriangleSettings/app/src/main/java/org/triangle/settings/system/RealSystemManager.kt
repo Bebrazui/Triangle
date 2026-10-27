@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
+import android.provider.MediaStore
 import android.provider.Settings
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
@@ -1363,41 +1364,125 @@ class RealSystemManager(private val context: Context) {
         val packageName: String,
         val icon: android.graphics.drawable.Drawable?,
         val percentage: Float,
-        val foregroundTimeMinutes: Long
+        val foregroundTimeMinutes: Long,
+        val consumedMah: Double
     )
 
+    /**
+     * Достаёт BatteryUsageStats из скрытого системного сервиса batterystats.
+     *
+     * Оба перегруженных метода — SystemApi. Сначала пробуем версию без
+     * аргументов (внутри она сама подставляет BatteryUsageStatsQuery.DEFAULT),
+     * затем — явный запрос. Манифест объявляет android:usesNonSdkApi, поэтому
+     * платформенно подписанному приложению hidden API доступны.
+     */
+    private fun invokeBatteryUsageStats(service: Any): Any? {
+        try {
+            return service.javaClass.getMethod("getBatteryUsageStats").invoke(service)
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "getBatteryUsageStats() failed, trying query overload", e)
+        }
+        return try {
+            val queryClass = Class.forName("android.os.BatteryUsageStatsQuery")
+            val query = queryClass.getField("DEFAULT").get(null)
+            service.javaClass.getMethod("getBatteryUsageStats", queryClass).invoke(service, query)
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "getBatteryUsageStats(query) failed", e)
+            null
+        }
+    }
+
+    /**
+     * Реальная статистика по UID из системного BatteryUsageStats.
+     *
+     * Требуется BATTERY_STATS; приложение подписано платформенным ключом,
+     * поэтому разрешение выдаётся при установке. Если системный API
+     * недоступен, возвращаем пустой список: выдуманные проценты запрещены.
+     */
     fun getAppsBatteryUsageList(): List<AppBatteryUsage> {
         val list = mutableListOf<AppBatteryUsage>()
+        var totalPower = 0.0
         try {
+            val service = context.getSystemService("batterystats") ?: return emptyList()
+            val stats = invokeBatteryUsageStats(service) ?: return emptyList()
+
+            val consumers = stats.javaClass.getMethod("getUidBatteryConsumers")
+                .invoke(stats) as? List<*> ?: return emptyList()
+            // Знаменатель для долей — сумма расхода по всем UID-потребителям,
+            // то есть тот же набор данных, что и в списке.
+
             val pm = context.packageManager
-            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
-            val cal = java.util.Calendar.getInstance()
-            val endTime = cal.timeInMillis
-            cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
-            val startTime = cal.timeInMillis
-
-            val stats = usm?.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, startTime, endTime) ?: emptyList()
-            val activeStats = stats.filter { it.totalTimeInForeground > 60_000 } // больше 1 минуты
-            val totalFgTime = activeStats.sumOf { it.totalTimeInForeground }.coerceAtLeast(1L)
-
-            // Распределяем заряд аккумулятора пропорционально времени активности экрана
-            for (stat in activeStats) {
+            for (consumer in consumers) {
+                if (consumer == null) continue
                 try {
-                    val appInfo = pm.getApplicationInfo(stat.packageName, 0)
+                    val uid = consumer.javaClass.getMethod("getUid").invoke(consumer) as? Int ?: continue
+                    val powerMah = (consumer.javaClass.getMethod("getConsumedPower").invoke(consumer) as? Double)
+                        ?: continue
+                    if (powerMah <= 0.0 || uid < 0) continue
+                    totalPower += powerMah
+
+                    val packages = pm.getPackagesForUid(uid) ?: continue
+                    val packageName = packages.firstOrNull { pkg ->
+                        try {
+                            val ai = pm.getApplicationInfo(pkg, 0)
+                            (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0 ||
+                                pm.getLaunchIntentForPackage(pkg) != null
+                        } catch (e: Exception) {
+                            false
+                        }
+                    } ?: packages.firstOrNull() ?: continue
+
+                    val appInfo = try {
+                        pm.getApplicationInfo(packageName, 0)
+                    } catch (e: Exception) {
+                        continue
+                    }
                     val appName = pm.getApplicationLabel(appInfo).toString()
-                    val icon = pm.getApplicationIcon(appInfo)
-                    val fgMinutes = stat.totalTimeInForeground / (1000 * 60)
-                    val pct = ((stat.totalTimeInForeground.toFloat() / totalFgTime) * 38f).coerceAtLeast(1f) // в среднем до 38-40% общего расхода экрана
-                    list.add(AppBatteryUsage(appName, stat.packageName, icon, pct, fgMinutes))
+                    val icon = try {
+                        pm.getApplicationIcon(appInfo)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    val existing = list.indexOfFirst { it.packageName == packageName }
+                    if (existing >= 0) {
+                        val old = list[existing]
+                        list[existing] = old.copy(
+                            consumedMah = old.consumedMah + powerMah
+                        )
+                    } else {
+                        list.add(
+                            AppBatteryUsage(
+                                appName = appName,
+                                packageName = packageName,
+                                icon = icon,
+                                percentage = 0f,
+                                foregroundTimeMinutes = 0L,
+                                consumedMah = powerMah
+                            )
+                        )
+                    }
                 } catch (e: Exception) {
-                    // Пакет мог быть системным или удаленным
+                    // Один битый UID не должен ломать весь список.
                 }
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "battery usage stats unavailable", e)
+            return emptyList()
+        }
 
-        // Если реальной статистики нет — возвращаем пустой список, UI покажет «Нет данных».
-        // Подставлять выдуманные проценты запрещено: пользователь примет их за реальные.
-        return list.sortedByDescending { it.percentage }
+        return list
+            .filter { it.consumedMah >= 0.01 }
+            .map {
+                it.copy(
+                    percentage = if (totalPower > 0) {
+                        ((it.consumedMah / totalPower) * 100.0).toFloat()
+                    } else {
+                        -1f // ёмкость/общий расход неизвестны — процент не показываем
+                    }
+                )
+            }
+            .sortedByDescending { it.consumedMah }
+            .take(25)
     }
 
     // ========================================
@@ -2647,9 +2732,20 @@ class RealSystemManager(private val context: Context) {
         val downloadsBytes: Long,
         val downloadsFormatted: String,
         val otherBytes: Long,
-        val otherFormatted: String
+        val otherFormatted: String,
+        val hasMediaAccess: Boolean = false
     )
 
+    /**
+     * Честная разбивка: занятое место раскладывается только на то, что
+     * реально можно измерить без выдуманных долей.
+     *
+     * - «Приложения» — сумма размеров APK и split-APK всех пакетов.
+     * - «Медиа» и «Загрузки» — агрегаты MediaStore; без доступа ко всем
+     *   файлам они не считаются, и UI предлагает выдать доступ.
+     * - «Система и прочее» — остаток занятого места: данные приложений,
+     *   кэш, системные файлы. Это разность, а не оценка «50/30/10».
+     */
     fun getDetailedStorageBreakdown(): StorageDetailedBreakdown {
         return try {
             val dataPath = Environment.getDataDirectory()
@@ -2659,20 +2755,21 @@ class RealSystemManager(private val context: Context) {
             val used = (total - free).coerceAtLeast(0L)
             val pct = if (total > 0) ((used * 100) / total).toInt() else 0
 
-            // Системный раздел (образ прошивки)
-            val rootStat = try { StatFs(Environment.getRootDirectory().path) } catch (e: Exception) { null }
-            val systemSize = if (rootStat != null) {
-                rootStat.blockCountLong * rootStat.blockSizeLong
-            } else {
-                14L * 1024 * 1024 * 1024
+            val appsSize = getInstalledApkBytes()
+            val mediaAccess = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                Environment.isExternalStorageManager()
+
+            var mediaSize = 0L
+            var downloadsSize = 0L
+            if (mediaAccess) {
+                mediaSize = sumOfMediaSizes()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    downloadsSize = sumMediaSize(MediaStore.Downloads.EXTERNAL_CONTENT_URI)
+                }
             }
 
-            // Быстрый расчет без рекурсивного обхода файловой системы
-            val userUsed = (used - systemSize).coerceAtLeast(0L)
-            val appsSize = (userUsed * 0.50f).toLong().coerceAtLeast(1024L * 1024 * 500)
-            val mediaSize = (userUsed * 0.30f).toLong()
-            val downloadsSize = (userUsed * 0.10f).toLong()
-            val otherSize = (userUsed - appsSize - mediaSize - downloadsSize).coerceAtLeast(0L)
+            val known = (appsSize + mediaSize + downloadsSize).coerceAtMost(used)
+            val systemSize = (used - known).coerceAtLeast(0L)
 
             StorageDetailedBreakdown(
                 totalBytes = total,
@@ -2690,29 +2787,73 @@ class RealSystemManager(private val context: Context) {
                 mediaFormatted = Formatter.formatFileSize(context, mediaSize),
                 downloadsBytes = downloadsSize,
                 downloadsFormatted = Formatter.formatFileSize(context, downloadsSize),
-                otherBytes = otherSize,
-                otherFormatted = Formatter.formatFileSize(context, otherSize)
+                otherBytes = 0L,
+                otherFormatted = Formatter.formatFileSize(context, 0L),
+                hasMediaAccess = mediaAccess
             )
         } catch (e: Exception) {
+            e.printStackTrace()
+            // Нули означают «нет данных», а не выдуманные 128 ГБ.
             StorageDetailedBreakdown(
-                totalBytes = 128L * 1024 * 1024 * 1024,
-                freeBytes = 78L * 1024 * 1024 * 1024,
-                usedBytes = 50L * 1024 * 1024 * 1024,
-                totalFormatted = "128 ГБ",
-                usedFormatted = "50 ГБ",
-                freeFormatted = "78 ГБ",
-                usedPercent = 39,
-                systemBytes = 16L * 1024 * 1024 * 1024,
-                systemFormatted = "16 ГБ",
-                appsBytes = 22L * 1024 * 1024 * 1024,
-                appsFormatted = "22 ГБ",
-                mediaBytes = 8L * 1024 * 1024 * 1024,
-                mediaFormatted = "8 ГБ",
-                downloadsBytes = 2L * 1024 * 1024 * 1024,
-                downloadsFormatted = "2 ГБ",
-                otherBytes = 2L * 1024 * 1024 * 1024,
-                otherFormatted = "2 ГБ"
+                totalBytes = 0L,
+                freeBytes = 0L,
+                usedBytes = 0L,
+                totalFormatted = "—",
+                usedFormatted = "—",
+                freeFormatted = "—",
+                usedPercent = 0,
+                systemBytes = 0L,
+                systemFormatted = "—",
+                appsBytes = 0L,
+                appsFormatted = "—",
+                mediaBytes = 0L,
+                mediaFormatted = "—",
+                downloadsBytes = 0L,
+                downloadsFormatted = "—",
+                otherBytes = 0L,
+                otherFormatted = "—",
+                hasMediaAccess = false
             )
+        }
+    }
+
+    /** Суммарный размер APK и split-APK всех установленных пакетов. */
+    private fun getInstalledApkBytes(): Long {
+        var total = 0L
+        try {
+            val pm = context.packageManager
+            for (pkg in pm.getInstalledPackages(0)) {
+                val ai = pkg.applicationInfo ?: continue
+                total += fileLength(ai.sourceDir)
+                ai.splitSourceDirs?.forEach { total += fileLength(it) }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return total
+    }
+
+    private fun fileLength(path: String?): Long = try {
+        if (path.isNullOrBlank()) 0L else java.io.File(path).length().coerceAtLeast(0L)
+    } catch (e: Exception) {
+        0L
+    }
+
+    private fun sumOfMediaSizes(): Long {
+        val images = sumMediaSize(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        val video = sumMediaSize(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        val audio = sumMediaSize(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+        return images + video + audio
+    }
+
+    private fun sumMediaSize(uri: android.net.Uri): Long {
+        return try {
+            val projection = arrayOf("SUM(${MediaStore.MediaColumns.SIZE})")
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else 0L
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
         }
     }
 

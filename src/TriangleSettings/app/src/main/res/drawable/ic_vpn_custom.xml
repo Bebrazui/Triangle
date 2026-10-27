@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <!-- Phosphor Shield / VPN icon -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M208,40H48A16,16 0 0,0 32,56v56c0,86.48 83.2,129.74 92.4,134.34a8,8 0 0,0 7.2,0C140.8,241.74 224,198.48 224,112V56A16,16 0 0,0 208,40ZM208,112c0,74.52 -70.47,113.88 -80,119C118.47,225.88 48,186.52 48,112V56H208Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M128,88a24,24 0 0,0 -24,24v8H96a8,8 0 0,0 -8,8v40a8,8 0 0,0 8,8h64a8,8 0 0,0 8,-8V128a8,8 0 0,0 -8,-8h-8v-8A24,24 0 0,0 128,88Zm16,32H112v-8a16,16 0 0,1 32,0Z" />
+</vector>

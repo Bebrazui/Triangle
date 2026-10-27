@@ -1,0 +1,27 @@
+# Gradle / Android build output
+build/
+.gradle/
+.kotlin/
+local.properties
+*.iml
+.idea/
+captures/
+
+# Large binary assets (kept locally, not in git)
+base_image/
+aosp_reference/
+reference/
+output/*.img
+output/*.img.xz
+*.img
+*.img.xz
+
+# Compiled APKs and signatures (rebuildable)
+*.apk
+*.idsig
+*.apk.idsig
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Настройки</string>
+    <string name="settings_title">Настройки</string>
+    <string name="search_hint">Поиск в настройках...</string>
+    <string name="account_title">Аккаунт Triangle / Google</string>
+    <string name="account_subtitle">Синхронизация, безопасность и резервное копирование</string>
+
+    <!-- Main Categories -->
+    <string name="network_title">Сеть и интернет</string>
+    <string name="network_subtitle">Wi-Fi, SIM-карты, точка доступа, VPN</string>
+    <string name="connected_devices_title">Подключенные устройства</string>
+    <string name="connected_devices_subtitle">Bluetooth, сопряжение, аксессуары</string>
+    <string name="display_title">Экран</string>
+    <string name="display_subtitle">Адаптивные 60–120 Гц, темная тема, яркость</string>
+    <string name="wallpaper_title">Обои и стиль</string>
+    <string name="wallpaper_subtitle">Оформление, цветовые палитры, шрифты</string>
+    <string name="sound_title">Звук и вибрация</string>
+    <string name="sound_subtitle">Громкость, тактильный отклик, звуки системы</string>
+    <string name="notifications_title">Уведомления</string>
+    <string name="notifications_subtitle">История, всплывающие окна, доступ приложений</string>
+    <string name="apps_title">Приложения</string>
+    <string name="apps_subtitle">Все установленные приложения, разрешения</string>
+    <string name="battery_title">Батарея</string>
+    <string name="battery_subtitle">Заряд аккумулятора и режим энергосбережения</string>
+    <string name="storage_title">Хранилище</string>
+    <string name="storage_subtitle">Свободное место и системные разделы</string>
+    <string name="security_title">Безопасность и конфиденциальность</string>
+    <string name="security_subtitle">Блокировка экрана, microG Signature Spoofing</string>
+    <string name="location_title">Геолокация</string>
+    <string name="location_subtitle">Службы определения местоположения и GPS</string>
+    <string name="accessibility_title">Спец. возможности</string>
+    <string name="accessibility_subtitle">Высокий контраст, инверсия цветов</string>
+    <string name="system_update_title">Обновление системы</string>
+    <string name="system_update_subtitle">Triangle OS 15 · Релиз GSI v1.0</string>
+    <string name="system_title">Система</string>
+    <string name="system_subtitle">Язык, жесты, опции разработчика</string>
+    <string name="about_title">О телефоне</string>
+    <string name="about_subtitle">Параметры устройства и Triangle OS</string>
+    <string name="root_provider_title">Root-провайдер</string>
+    <string name="root_provider_subtitle">Выбор метода системного root-доступа</string>
+
+    <!-- Detail Settings -->
+    <string name="wifi_label">Wi-Fi</string>
+    <string name="mobile_data_label">Мобильные данные</string>
+    <string name="mobile_data_desc">Передача данных по сотовой сети</string>
+    <string name="roaming_label">Интернет в роуминге</string>
+    <string name="roaming_desc">Подключение к сервисам данных в роуминге</string>
+    <string name="airplane_mode_label">Режим полета</string>
+    <string name="airplane_mode_desc">Отключение мобильной связи, Wi-Fi и Bluetooth</string>
+    <string name="hotspot_label">Точка доступа и модем</string>
+    <string name="hotspot_desc">Раздача интернета по Wi-Fi, Bluetooth или USB</string>
+    <string name="dns_label">Персональный DNS-сервер</string>
+    <string name="dns_desc">Шифрование DNS-запросов (DoH/DoT)</string>
+
+    <string name="bluetooth_label">Bluetooth</string>
+    <string name="bluetooth_desc">Поиск и подключение беспроводных устройств</string>
+    <string name="pair_new_device_label">Подключить новое устройство</string>
+    <string name="pair_new_device_desc">Перевести аксессуар в режим сопряжения</string>
+
+    <string name="smooth_display_label">Плавный экран (120 Гц)</string>
+    <string name="smooth_display_desc">Динамическое повышение частоты развертки экрана</string>
+    <string name="dark_theme_label">Темная тема</string>
+    <string name="dark_theme_desc">Глубокий черный фон для экономии энергии на OLED</string>
+    <string name="auto_brightness_label">Автонастройка яркости</string>
+    <string name="auto_brightness_desc">Адаптация яркости под уровень внешнего освещения</string>
+    <string name="brightness_slider_label">Яркость экрана</string>
+    <string name="night_light_label">Ночная подсветка</string>
+    <string name="night_light_desc">Теплый янтарный оттенок для снижения нагрузки на глаза</string>
+    <string name="auto_rotate_label">Автоповорот экрана</string>
+    <string name="auto_rotate_desc">Ориентация дисплея по датчику гироскопа</string>
+    <string name="screen_timeout_label">Тайм-аут экрана</string>
+
+    <string name="media_volume_label">Громкость мультимедиа</string>
+    <string name="ring_volume_label">Громкость звонка</string>
+    <string name="alarm_volume_label">Громкость будильника</string>
+    <string name="haptics_label">Тактильный отклик</string>
+    <string name="haptics_desc">Вибрация при касании кнопок и жестах</string>
+    <string name="dial_pad_tones_label">Звуки набора номера</string>
+    <string name="screen_lock_sound_label">Звук блокировки экрана</string>
+    <string name="charging_sound_label">Звук подключения зарядного устройства</string>
+
+    <string name="battery_saver_label">Режим энергосбережения</string>
+    <string name="battery_saver_desc">Ограничивает фоновую активность и производительность</string>
+    <string name="battery_level_label">Текущий уровень заряда</string>
+    <string name="battery_status_charging">Заряжается</string>
+    <string name="battery_status_discharging">Работа от батареи</string>
+
+    <string name="dev_options_title">Для разработчиков</string>
+    <string name="usb_debugging_label">Отладка по USB (ADB)</string>
+    <string name="usb_debugging_desc">Разрешить управление устройством через Android Debug Bridge</string>
+    <string name="stay_awake_label">Не выключать экран при зарядке</string>
+    <string name="stay_awake_desc">Экран останется включенным во время питания</string>
+    <string name="show_touches_label">Отображать касания</string>
+    <string name="show_touches_desc">Визуальный маркер точки нажатия на дисплей</string>
+    <string name="pointer_location_label">Расположение указателя</string>
+    <string name="pointer_location_desc">Информационная полоса координат касаний сверху</string>
+    <string name="anim_scale_label">Скорость системных анимаций</string>
+
+    <string name="high_contrast_label">Высококонтрастный текст</string>
+    <string name="high_contrast_desc">Усиление контуров текста для легкого чтения</string>
+    <string name="color_inversion_label">Инверсия цветов</string>
+    <string name="color_inversion_desc">Обращение всех цветов интерфейса</string>
+
+    <string name="signature_spoofing_label">microG Signature Spoofing</string>
+    <string name="signature_spoofing_desc">Эмуляция системных сервисов Google Play</string>
+    <string name="screen_lock_label">Блокировка экрана</string>
+    <string name="screen_lock_desc">PIN-код, пароль или графический ключ</string>
+
+    <string name="device_name_label">Имя устройства</string>
+    <string name="model_label">Модель</string>
+    <string name="manufacturer_label">Производитель</string>
+    <string name="android_version_label">Версия Android</string>
+    <string name="triangle_version_label">Версия Triangle OS</string>
+    <string name="kernel_label">Версия ядра Linux</string>
+    <string name="hardware_label">Аппаратная платформа</string>
+    <string name="build_number_label">Номер сборки</string>
+    <string name="security_patch_label">Обновление безопасности</string>
+    <string name="root_current_label">Текущий Root-менеджер</string>
+    <string name="processor_label">Процессор</string>
+</resources>

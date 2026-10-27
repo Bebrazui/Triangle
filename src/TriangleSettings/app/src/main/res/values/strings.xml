@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="search_hint">Search settings...</string>
+    <string name="account_title">Triangle / Google Account</string>
+    <string name="account_subtitle">Sync, security &amp; backup</string>
+
+    <!-- Main Categories -->
+    <string name="network_title">Network &amp; Internet</string>
+    <string name="network_subtitle">Wi-Fi, SIMs, Hotspot, VPN</string>
+    <string name="connected_devices_title">Connected devices</string>
+    <string name="connected_devices_subtitle">Bluetooth, pairing, accessories</string>
+    <string name="display_title">Display</string>
+    <string name="display_subtitle">Adaptive 60–120 Hz, Dark theme, Brightness</string>
+    <string name="wallpaper_title">Wallpaper &amp; style</string>
+    <string name="wallpaper_subtitle">Theme, fonts, icon palette</string>
+    <string name="sound_title">Sound &amp; vibration</string>
+    <string name="sound_subtitle">Volume, haptics, system audio</string>
+    <string name="notifications_title">Notifications</string>
+    <string name="notifications_subtitle">History, popups, permissions</string>
+    <string name="apps_title">Apps</string>
+    <string name="apps_subtitle">All installed apps, permissions</string>
+    <string name="battery_title">Battery</string>
+    <string name="battery_subtitle">Battery level and power saving</string>
+    <string name="storage_title">Storage</string>
+    <string name="storage_subtitle">Free space and system partitions</string>
+    <string name="security_title">Security &amp; Privacy</string>
+    <string name="security_subtitle">Screen lock, microG signature spoofing</string>
+    <string name="location_title">Location</string>
+    <string name="location_subtitle">Location services and GPS</string>
+    <string name="accessibility_title">Accessibility</string>
+    <string name="accessibility_subtitle">High contrast, color inversion</string>
+    <string name="system_update_title">System update</string>
+    <string name="system_update_subtitle">Triangle OS 15 · GSI Release v1.0</string>
+    <string name="system_title">System</string>
+    <string name="system_subtitle">Languages, gestures, developer options</string>
+    <string name="about_title">About phone</string>
+    <string name="about_subtitle">Device details and Triangle OS</string>
+    <string name="root_provider_title">Root provider</string>
+    <string name="root_provider_subtitle">Select system root access mechanism</string>
+
+    <!-- Detail Settings -->
+    <string name="wifi_label">Wi-Fi</string>
+    <string name="mobile_data_label">Mobile data</string>
+    <string name="mobile_data_desc">Access internet via mobile network</string>
+    <string name="roaming_label">Data roaming</string>
+    <string name="roaming_desc">Connect to data services when roaming</string>
+    <string name="airplane_mode_label">Airplane mode</string>
+    <string name="airplane_mode_desc">Disable Wi-Fi, cellular and Bluetooth</string>
+    <string name="hotspot_label">Hotspot &amp; tethering</string>
+    <string name="hotspot_desc">Share internet via Wi-Fi, Bluetooth or USB</string>
+    <string name="dns_label">Private DNS</string>
+    <string name="dns_desc">Encrypted DNS queries (DoH/DoT)</string>
+
+    <string name="bluetooth_label">Bluetooth</string>
+    <string name="bluetooth_desc">Search and pair wireless devices</string>
+    <string name="pair_new_device_label">Pair new device</string>
+    <string name="pair_new_device_desc">Put your accessory in pairing mode</string>
+
+    <string name="smooth_display_label">Smooth Display (120 Hz)</string>
+    <string name="smooth_display_desc">Dynamically switches up to 120Hz for tactile fluidity</string>
+    <string name="dark_theme_label">Dark theme</string>
+    <string name="dark_theme_desc">Deep OLED pitch black power saving</string>
+    <string name="auto_brightness_label">Adaptive brightness</string>
+    <string name="auto_brightness_desc">Optimize brightness level for available light</string>
+    <string name="brightness_slider_label">Screen brightness</string>
+    <string name="night_light_label">Night Light</string>
+    <string name="night_light_desc">Tints your screen amber to view comfortably</string>
+    <string name="auto_rotate_label">Auto-rotate screen</string>
+    <string name="auto_rotate_desc">Switch orientation according to device sensor</string>
+    <string name="screen_timeout_label">Screen timeout</string>
+
+    <string name="media_volume_label">Media volume</string>
+    <string name="ring_volume_label">Ring &amp; notification volume</string>
+    <string name="alarm_volume_label">Alarm volume</string>
+    <string name="haptics_label">Tactile haptics</string>
+    <string name="haptics_desc">Crisp mechanical feedback on touches and keys</string>
+    <string name="dial_pad_tones_label">Dial pad tones</string>
+    <string name="screen_lock_sound_label">Screen locking sound</string>
+    <string name="charging_sound_label">Charging sound and vibration</string>
+
+    <string name="battery_saver_label">Battery Saver</string>
+    <string name="battery_saver_desc">Limits background activity and performance</string>
+    <string name="battery_level_label">Current battery level</string>
+    <string name="battery_status_charging">Charging</string>
+    <string name="battery_status_discharging">Discharging</string>
+
+    <string name="dev_options_title">Developer options</string>
+    <string name="usb_debugging_label">USB debugging (ADB)</string>
+    <string name="usb_debugging_desc">Debug mode when USB is connected</string>
+    <string name="stay_awake_label">Stay awake while charging</string>
+    <string name="stay_awake_desc">Screen will never sleep while charging</string>
+    <string name="show_touches_label">Show visual touches</string>
+    <string name="show_touches_desc">Show visual feedback for touches</string>
+    <string name="pointer_location_label">Pointer location</string>
+    <string name="pointer_location_desc">Screen overlay with touch coordinates</string>
+    <string name="anim_scale_label">Window animation scale</string>
+
+    <string name="high_contrast_label">High contrast text</string>
+    <string name="high_contrast_desc">Enhances text contour for readability</string>
+    <string name="color_inversion_label">Color inversion</string>
+    <string name="color_inversion_desc">Invert display colors system-wide</string>
+
+    <string name="signature_spoofing_label">microG Signature Spoofing</string>
+    <string name="signature_spoofing_desc">Allow microG to mock Google Play Services</string>
+    <string name="screen_lock_label">Screen lock</string>
+    <string name="screen_lock_desc">PIN, pattern or password protection</string>
+
+    <string name="device_name_label">Device name</string>
+    <string name="model_label">Model</string>
+    <string name="manufacturer_label">Manufacturer</string>
+    <string name="android_version_label">Android version</string>
+    <string name="triangle_version_label">Triangle OS version</string>
+    <string name="kernel_label">Linux Kernel version</string>
+    <string name="hardware_label">Hardware platform</string>
+    <string name="build_number_label">Build number</string>
+    <string name="security_patch_label">Security patch level</string>
+    <string name="root_current_label">Active Root manager</string>
+    <string name="processor_label">Processor</string>
+</resources>

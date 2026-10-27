@@ -59,6 +59,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.triangle.settings.notification.NotificationLog
+import org.triangle.settings.system.BluetoothScanner
 import org.triangle.settings.system.RealAppItem
 import org.triangle.settings.system.RealSystemManager
 import org.triangle.settings.ui.icons.Phosphor
@@ -2272,6 +2273,46 @@ fun BluetoothPairingSubScreen(
 ) {
     val devName = remember { systemManager.getBluetoothDeviceName() }
     val context = LocalContext.current
+    val scanner = remember { BluetoothScanner(context) }
+    var devices by remember { mutableStateOf<List<BluetoothScanner.FoundDevice>>(emptyList()) }
+    var scanning by remember { mutableStateOf(false) }
+    var scanFinished by remember { mutableStateOf(false) }
+    var bluetoothOn by remember { mutableStateOf(systemManager.isBluetoothOn()) }
+    var permissionGranted by remember {
+        mutableStateOf(scanner.hasScanPermission() && scanner.hasConnectPermission())
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        // Ориентируемся на фактическое состояние разрешений, а не на ответ диалога.
+        permissionGranted = scanner.hasScanPermission() && scanner.hasConnectPermission()
+    }
+
+    fun startScan() {
+        if (!permissionGranted || !bluetoothOn) return
+        devices = emptyList()
+        scanFinished = false
+        scanning = true
+        scanner.start(
+            onFound = { found ->
+                devices = (devices.filterNot { it.address == found.address } + found)
+                    .sortedByDescending { it.rssi ?: Int.MIN_VALUE }
+            },
+            onFinished = {
+                scanning = false
+                scanFinished = true
+            }
+        )
+    }
+
+    LaunchedEffect(permissionGranted, bluetoothOn) {
+        if (permissionGranted && bluetoothOn) startScan()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { scanner.stop() }
+    }
 
     SubScreenScaffold(title = "Подключение устройства", onBack = onBack) {
         item {
@@ -2279,22 +2320,125 @@ fun BluetoothPairingSubScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(text = "Имя устройства: $devName", style = MaterialTheme.typography.titleMedium, fontSize = 16.sp)
                     Text(
-                        text = "Убедитесь, что аксессуар включен и находится в режиме сопряжения",
+                        text = if (scanning) "Идёт поиск устройств Bluetooth Classic и BLE…" else "Поиск длится 12 секунд и показывает только реально найденные устройства",
                         style = MaterialTheme.typography.bodyMedium,
                         fontSize = 13.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
+                if (scanner.isSupported()) {
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    SettingToggleRow(
+                        title = "Bluetooth",
+                        subtitle = if (bluetoothOn) "Адаптер включён" else "Адаптер выключен",
+                        checked = bluetoothOn,
+                        onCheckedChange = { enabled ->
+                            systemManager.setBluetooth(enabled)
+                            bluetoothOn = systemManager.isBluetoothOn()
+                        }
+                    )
+                }
             }
         }
 
-        item {
-            SettingCardGroup {
-                SettingSimpleRow(
-                    title = "Доступные устройства",
-                    subtitle = "Поиск активных сигналов Bluetooth Low Energy и Classic..."
-                )
+        if (!scanner.isSupported()) {
+            item {
+                SettingCardGroup {
+                    SettingSimpleRow(
+                        title = "Bluetooth недоступен",
+                        subtitle = "Система не сообщает о наличии Bluetooth-адаптера"
+                    )
+                }
+            }
+        } else if (!permissionGranted) {
+            item {
+                SettingCardGroup {
+                    SettingItem(
+                        icon = Phosphor.ShieldCheck,
+                        title = "Нужно разрешение на поиск",
+                        subtitle = "Android 12+ требует BLUETOOTH_SCAN и BLUETOOTH_CONNECT",
+                        onClick = {
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.BLUETOOTH_SCAN,
+                                    android.Manifest.permission.BLUETOOTH_CONNECT
+                                )
+                            )
+                        }
+                    )
+                }
+            }
+        } else if (!bluetoothOn) {
+            item {
+                SettingCardGroup {
+                    SettingSimpleRow(
+                        title = "Bluetooth выключен",
+                        subtitle = "Включите адаптер, чтобы искать устройства"
+                    )
+                }
+            }
+        }
+
+        if (devices.isEmpty()) {
+            if (permissionGranted && bluetoothOn) {
+                item {
+                    SettingCardGroup {
+                        SettingSimpleRow(
+                            title = if (scanning) "Поиск…" else "Устройства не найдены",
+                            subtitle = if (scanning) {
+                                "Убедитесь, что аксессуар включён и находится в режиме сопряжения"
+                            } else {
+                                "Рядом нет устройств в режиме обнаружения"
+                            }
+                        )
+                        HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        SettingItem(
+                            icon = Phosphor.ArrowsClockwise,
+                            title = if (scanning) "Остановить и начать заново" else "Искать снова",
+                            subtitle = "Повторное сканирование Classic и BLE",
+                            onClick = { startScan() }
+                        )
+                    }
+                }
+            }
+        } else {
+            item {
+                SettingCardGroup {
+                    devices.forEachIndexed { index, device ->
+                        val subtitle = buildString {
+                            append(device.address)
+                            append(" · ")
+                            append(if (device.isLe) "BLE" else "Classic")
+                            device.rssi?.let { append(" · $it dBm") }
+                            if (device.isBonded) append(" · сопряжено")
+                        }
+                        SettingItem(
+                            icon = if (device.isLe) Phosphor.Bluetooth else Phosphor.Bluetooth,
+                            title = device.name,
+                            subtitle = subtitle,
+                            onClick = {
+                                if (device.isBonded) {
+                                    Toast.makeText(context, "Устройство уже сопряжено", Toast.LENGTH_SHORT).show()
+                                } else if (scanner.pair(device.address)) {
+                                    Toast.makeText(context, "Запрос на сопряжение отправлен", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Не удалось начать сопряжение", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        if (index < devices.lastIndex) {
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        }
+                    }
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    SettingItem(
+                        icon = Phosphor.ArrowsClockwise,
+                        title = if (scanning) "Идёт поиск…" else "Искать снова",
+                        subtitle = "Найдено устройств: ${devices.size}",
+                        onClick = { startScan() }
+                    )
+                }
             }
         }
     }
@@ -3094,14 +3238,42 @@ fun DndSettingsSubScreen(
     systemManager: RealSystemManager,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     var zenMode by remember { mutableStateOf(systemManager.isZenModeOn()) }
+    val accessGranted = remember { systemManager.isDndPolicyAccessGranted() }
+    var policy by remember { mutableStateOf(systemManager.getDndPolicy()) }
+
+    val categoryRows = listOf(
+        Triple(1 shl 5, "Будильники", "Сигналы будильников всегда звучат"),
+        Triple(1 shl 0, "Напоминания", "Напоминания из календаря и приложений"),
+        Triple(1 shl 1, "События", "События календаря и подобные оповещения"),
+        Triple(1 shl 6, "Медиа", "Музыка, навигация, игры"),
+        Triple(1 shl 7, "Системные звуки", "Системные оповещения без категории"),
+        Triple(1 shl 3, "Звонки", "Входящие вызовы"),
+        Triple(1 shl 2, "Сообщения", "Сообщения и переписки")
+    )
+
+    val senderOptions = listOf(
+        0 to "Все",
+        1 to "Контакты",
+        2 to "Избранные"
+    )
+
+    fun applyPolicy(categories: Int, calls: Int, messages: Int) {
+        if (systemManager.setDndPolicy(categories, calls, messages)) {
+            policy = systemManager.getDndPolicy()
+        } else {
+            Toast.makeText(context, "Система не применила правило", Toast.LENGTH_SHORT).show()
+            policy = systemManager.getDndPolicy()
+        }
+    }
 
     SubScreenScaffold(title = "Не беспокоить", onBack = onBack) {
         item {
             SettingCardGroup {
                 SettingToggleRow(
                     title = "Включить режим «Не беспокоить»",
-                    subtitle = "Отключает все звуки звонков и всплывающие оповещения",
+                    subtitle = "Отключает звуки звонков и всплывающие оповещения",
                     checked = zenMode,
                     onCheckedChange = {
                         zenMode = it
@@ -3111,21 +3283,151 @@ fun DndSettingsSubScreen(
             }
         }
 
-        item {
-            SettingCardGroup {
-                SettingSimpleRow(
-                    title = "Кто может прерывать режим",
-                    subtitle = "Только избранные контакты и повторные вызовы"
+        if (policy == null) {
+            item {
+                SettingCardGroup {
+                    SettingSimpleRow(
+                        title = "Правила недоступны",
+                        subtitle = if (accessGranted) {
+                            "Система не вернула текущую политику «Не беспокоить»"
+                        } else {
+                            "Нет доступа к политике уведомлений (ACCESS_NOTIFICATIONS)"
+                        }
+                    )
+                }
+            }
+        } else {
+            item {
+                SettingCardGroup {
+                    categoryRows.forEachIndexed { index, (bit, title, subtitle) ->
+                        val current = policy!!
+                        SettingToggleRow(
+                            title = title,
+                            subtitle = subtitle,
+                            checked = (current.priorityCategories and bit) != 0,
+                            onCheckedChange = { enabled ->
+                                val newMask = if (enabled) {
+                                    current.priorityCategories or bit
+                                } else {
+                                    current.priorityCategories and bit.inv()
+                                }
+                                applyPolicy(newMask, current.callSenders, current.messageSenders)
+                            }
+                        )
+                        if (index < categoryRows.lastIndex) {
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "КТО МОЖЕТ ПРЕРЫВАТЬ ЗВОНКАМИ",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSecondary,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp)
                 )
-                HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                SettingSimpleRow(
-                    title = "Приложения-исключения",
-                    subtitle = "Нет исключений"
+                SettingCardGroup {
+                    senderOptions.forEachIndexed { index, (value, label) ->
+                        val current = policy!!
+                        val selected = current.callSenders == value
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    applyPolicy(
+                                        current.priorityCategories,
+                                        value,
+                                        current.messageSenders
+                                    )
+                                }
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontSize = 15.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (selected) {
+                                Icon(
+                                    imageVector = Phosphor.Check,
+                                    contentDescription = "Выбрано",
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        if (index < senderOptions.lastIndex) {
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "КТО МОЖЕТ ПРЕРЫВАТЬ СООБЩЕНИЯМИ",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSecondary,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp)
                 )
-                HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                SettingSimpleRow(
-                    title = "Расписание",
-                    subtitle = "Включать автоматически ночью"
+                SettingCardGroup {
+                    senderOptions.forEachIndexed { index, (value, label) ->
+                        val current = policy!!
+                        val selected = current.messageSenders == value
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    applyPolicy(
+                                        current.priorityCategories,
+                                        current.callSenders,
+                                        value
+                                    )
+                                }
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontSize = 15.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (selected) {
+                                Icon(
+                                    imageVector = Phosphor.Check,
+                                    contentDescription = "Выбрано",
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        if (index < senderOptions.lastIndex) {
+                            HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "Категории и отправители записываются в системную политику уведомлений и действуют для текущего режима «Не беспокоить».",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 11.sp,
+                    color = TextTertiary,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
                 )
             }
         }

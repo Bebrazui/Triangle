@@ -1031,6 +1031,65 @@ class RealSystemManager(private val context: Context) {
         } catch (e: Exception) { e.printStackTrace() }
     }
 
+    /**
+     * Реальная политика «Не беспокоить» из NotificationManager: какие
+     * категории уведомлений пробиваются и от каких отправителей.
+     */
+    data class DndPolicy(
+        val priorityCategories: Int,
+        val callSenders: Int,
+        val messageSenders: Int
+    )
+
+    fun isDndPolicyAccessGranted(): Boolean = try {
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+            .isNotificationPolicyAccessGranted
+    } catch (e: Exception) {
+        false
+    }
+
+    fun getDndPolicy(): DndPolicy? {
+        return try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as android.app.NotificationManager
+            val policy = nm.javaClass.getMethod("getNotificationPolicy").invoke(nm) ?: return null
+            val cls = policy.javaClass
+            DndPolicy(
+                priorityCategories = cls.getField("priorityCategories").getInt(policy),
+                callSenders = cls.getField("priorityCallSenders").getInt(policy),
+                messageSenders = cls.getField("priorityMessageSenders").getInt(policy)
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "cannot read DND policy", e)
+            null
+        }
+    }
+
+    /** true, если система применила политику и вернула те же значения. */
+    fun setDndPolicy(categories: Int, callSenders: Int, messageSenders: Int): Boolean {
+        return try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as android.app.NotificationManager
+            val policyClass = Class.forName("android.app.NotificationManager\$Policy")
+            val policy = policyClass
+                .getConstructor(
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
+                .newInstance(categories, callSenders, messageSenders)
+            nm.javaClass.getMethod("setNotificationPolicy", policyClass).invoke(nm, policy)
+            val applied = getDndPolicy()
+            applied != null &&
+                applied.priorityCategories == categories &&
+                applied.callSenders == callSenders &&
+                applied.messageSenders == messageSenders
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "cannot change DND policy", e)
+            false
+        }
+    }
+
     // Дополнительные параметры тактильного отклика и системных звуков
     fun isTouchSoundOn(): Boolean {
         return try { Settings.System.getInt(context.contentResolver, Settings.System.SOUND_EFFECTS_ENABLED, 1) == 1 } catch (e: Exception) { true }

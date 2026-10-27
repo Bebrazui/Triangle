@@ -659,7 +659,25 @@ class RealSystemManager(private val context: Context) {
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    fun isCastAvailable(): Boolean = true
+    /**
+     * Реальная проверка доступности приёма трансляции: смотрим маршруты MediaRouter
+     * и отбираем только нелокальные (удалённые дисплеи / cast-приёмники).
+     */
+    fun isCastAvailable(): Boolean {
+        return try {
+            val router = context.getSystemService(Context.MEDIA_ROUTER_SERVICE) as? android.media.MediaRouter
+                ?: return false
+            for (i in 0 until router.routeCount) {
+                val route = router.getRouteAt(i) ?: continue
+                if (route.playbackType != android.media.MediaRouter.RouteInfo.PLAYBACK_TYPE_LOCAL) {
+                    return true
+                }
+            }
+            false
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     // ========================================
     // ЭКРАН И ОТОБРАЖЕНИЕ
@@ -2735,6 +2753,56 @@ class RealSystemManager(private val context: Context) {
     fun getRealHardware(): String = Build.HARDWARE
     fun getSecurityPatch(): String = Build.VERSION.SECURITY_PATCH
     fun getKernelVersion(): String = System.getProperty("os.version") ?: "6.1-android15"
+
+    /** Режим SELinux из ядра: /sys/fs/selinux/enforce, fallback на ro.boot.selinux. */
+    fun getSelinuxMode(): String {
+        return try {
+            val enforceFile = java.io.File("/sys/fs/selinux/enforce")
+            if (enforceFile.exists() && enforceFile.canRead()) {
+                when (enforceFile.readText().trim()) {
+                    "1" -> "Enforcing"
+                    "0" -> "Permissive"
+                    else -> getSelinuxFromProp()
+                }
+            } else {
+                getSelinuxFromProp()
+            }
+        } catch (e: Exception) {
+            getSelinuxFromProp()
+        }
+    }
+
+    private fun getSelinuxFromProp(): String {
+        return when (getSystemProp("ro.boot.selinux", "").lowercase()) {
+            "enforcing" -> "Enforcing"
+            "permissive" -> "Permissive"
+            "disabled" -> "Disabled"
+            else -> "Неизвестно"
+        }
+    }
+
+    fun getSupportedAbis(): String {
+        return try {
+            Build.SUPPORTED_ABIS.joinToString(", ")
+        } catch (e: Exception) {
+            "Неизвестно"
+        }
+    }
+
+    fun isTrebleEnabled(): Boolean {
+        return getSystemProp("ro.treble.enabled", "false").equals("true", ignoreCase = true)
+    }
+
+    fun getAppVersionName(): String {
+        return try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+
+    /** true, если прошивка подписана release-ключами (официальная сборка), а не test-keys. */
+    fun isOfficialBuild(): Boolean = Build.TAGS?.contains("release-keys") == true
 
     // ========================================
     // БЕЗОПАСНОСТЬ И КОНФИДЕНЦИАЛЬНОСТЬ

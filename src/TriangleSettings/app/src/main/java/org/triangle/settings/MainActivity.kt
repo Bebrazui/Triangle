@@ -2119,6 +2119,7 @@ fun ConnectedDevicesSubScreen(
     onBack: () -> Unit
 ) {
     var bt by remember { mutableStateOf(systemManager.isBluetoothOn()) }
+    var selectedDevice by remember { mutableStateOf<org.triangle.settings.system.RealBtDeviceItem?>(null) }
     var bondedDevices by remember { mutableStateOf<List<org.triangle.settings.system.RealBtDeviceItem>>(emptyList()) }
     val devName = remember { systemManager.getBluetoothDeviceName() }
     val nfcOn = remember { systemManager.isNfcOn() }
@@ -2165,7 +2166,7 @@ fun ConnectedDevicesSubScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { }
+                                .clickable { selectedDevice = device }
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -2231,6 +2232,34 @@ fun ConnectedDevicesSubScreen(
             }
         }
     }
+
+    selectedDevice?.let { device ->
+        AlertDialog(
+            onDismissRequest = { selectedDevice = null },
+            title = {
+                Text(device.name, color = TextPrimary, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    InfoRow(label = "Состояние", value = if (device.isConnected) "Подключено" else "Не подключено")
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    InfoRow(label = "Класс устройства", value = device.majorClass)
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    InfoRow(label = "MAC-адрес", value = device.address)
+                    if (device.batteryLevel >= 0) {
+                        HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                        InfoRow(label = "Батарея", value = "${device.batteryLevel}%")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedDevice = null }) {
+                    Text("Закрыть", color = TextPrimary, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = SurfaceCard
+        )
+    }
 }
 
 @Composable
@@ -2268,14 +2297,41 @@ fun BluetoothPairingSubScreen(
     }
 }
 
+private fun launchSystemIntent(context: android.content.Context, intent: Intent) {
+    try {
+        context.startActivity(intent)
+    } catch (e: android.content.ActivityNotFoundException) {
+        Toast.makeText(context, "Системный экран недоступен", Toast.LENGTH_SHORT).show()
+    }
+}
+
 @Composable
 fun ConnectionPreferencesSubScreen(
     systemManager: RealSystemManager,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     var quickShare by remember { mutableStateOf(systemManager.isQuickShareOn()) }
     val nfcAvailable = remember { systemManager.isNfcAvailable() }
     var nfcOn by remember { mutableStateOf(systemManager.isNfcOn()) }
+
+    // Реальные интенты: строку показываем, только если система умеет её обработать.
+    val castIntent = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Intent(Settings.ACTION_CAST_SETTINGS).takeIf {
+                it.resolveActivity(context.packageManager) != null
+            }
+        } else null
+    }
+    val printIntent = remember {
+        Intent(Settings.ACTION_PRINT_SETTINGS).takeIf {
+            it.resolveActivity(context.packageManager) != null
+        }
+    }
+    val androidAutoIntent = remember {
+        context.packageManager.getLaunchIntentForPackage("com.google.android.projection.gearhead")
+    }
+    val castReceiversAvailable = remember { systemManager.isCastAvailable() }
 
     SubScreenScaffold(title = "Настройки подключения", onBack = onBack) {
         item {
@@ -2298,21 +2354,33 @@ fun ConnectionPreferencesSubScreen(
                         systemManager.setQuickShare(it)
                     }
                 )
-                HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                SettingSimpleRow(
-                    title = "Трансляция (Cast)",
-                    subtitle = "Беспроводной экран, Miracast, дисплеи"
-                )
-                HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                SettingSimpleRow(
-                    title = "Печать",
-                    subtitle = "Служба печати по умолчанию активна"
-                )
-                HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                SettingSimpleRow(
-                    title = "Android Auto",
-                    subtitle = "Подключение к автомобильному дисплею по проводу или Wi-Fi"
-                )
+                if (castIntent != null) {
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    SettingItem(
+                        icon = Phosphor.SquaresFour,
+                        title = "Трансляция (Cast)",
+                        subtitle = if (castReceiversAvailable) "Приёмники трансляции доступны" else "Приёмники не обнаружены",
+                        onClick = { launchSystemIntent(context, castIntent) }
+                    )
+                }
+                if (printIntent != null) {
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    SettingItem(
+                        icon = Phosphor.HardDrive,
+                        title = "Печать",
+                        subtitle = "Службы печати и принтеры",
+                        onClick = { launchSystemIntent(context, printIntent) }
+                    )
+                }
+                if (androidAutoIntent != null) {
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    SettingItem(
+                        icon = Phosphor.MapPin,
+                        title = "Android Auto",
+                        subtitle = "Подключение к автомобильному дисплею",
+                        onClick = { launchSystemIntent(context, androidAutoIntent) }
+                    )
+                }
             }
         }
     }
@@ -3374,6 +3442,7 @@ fun StorageSubScreen(
 ) {
     val breakdown = remember { systemManager.getDetailedStorageBreakdown() }
     val context = LocalContext.current
+    val appVersion = remember { systemManager.getAppVersionName() }
 
     SubScreenScaffold(title = stringResource(R.string.storage_title), onBack = onBack) {
         // Большой блок заполнения накопителя
@@ -3527,7 +3596,7 @@ fun StorageSubScreen(
                 // Системный раздел
                 SettingSimpleRow(
                     title = "Система и прошивка",
-                    subtitle = "${breakdown.systemFormatted} · Образ Triangle OS 15 GSI"
+                    subtitle = "${breakdown.systemFormatted} · Образ Triangle OS $appVersion GSI"
                 )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
 
@@ -7349,6 +7418,23 @@ fun WallpaperSubScreen(
     }
     var selectedGrid by remember { mutableStateOf("4 × 5") }
 
+    // Живые часы для превью: обновляются раз в 30 секунд, формат 12/24ч берётся из системы.
+    val now by produceState(initialValue = java.time.LocalDateTime.now()) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            value = java.time.LocalDateTime.now()
+        }
+    }
+    val previewTime = now.format(
+        java.time.format.DateTimeFormatter.ofPattern(
+            if (systemManager.is24HourFormat()) "HH:mm" else "hh:mm",
+            java.util.Locale.getDefault()
+        )
+    )
+    val previewDate = now.format(
+        java.time.format.DateTimeFormatter.ofPattern("EEE, d MMMM", java.util.Locale.getDefault())
+    ).replaceFirstChar { it.uppercase() }
+
     SubScreenScaffold(title = stringResource(R.string.wallpaper_title), onBack = onBack) {
         // Превью оформления
         item {
@@ -7373,13 +7459,13 @@ fun WallpaperSubScreen(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    text = "22:07",
+                                    text = previewTime,
                                     style = MaterialTheme.typography.displayLarge,
                                     fontSize = 24.sp,
                                     color = if (darkTheme) Color.White else TextPrimary
                                 )
                                 Text(
-                                    text = "Вс, 25 октября",
+                                    text = previewDate,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontSize = 11.sp,
                                     color = if (darkTheme) Color.LightGray else TextSecondary
@@ -7901,6 +7987,8 @@ fun SystemUpdateSubScreen(systemManager: RealSystemManager, onBack: () -> Unit) 
     val context = LocalContext.current
     val patch = remember { systemManager.getSecurityPatch() }
     val currentBuild = remember { systemManager.getRealBuildNumber() }
+    val appVersion = remember { systemManager.getAppVersionName() }
+    val officialBuild = remember { systemManager.isOfficialBuild() }
 
     var isChecking by remember { mutableStateOf(false) }
     var lastCheckResult by remember { mutableStateOf("Система актуальна") }
@@ -7991,7 +8079,7 @@ Box(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "15",
+                            text = Build.VERSION.RELEASE.substringBefore("."),
                             fontSize = 88.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = (-3).sp,
@@ -8006,7 +8094,7 @@ Box(
                             color = TextPrimary
                         )
                         Text(
-                            text = "Официальная сборка · Android 15",
+                            text = "${if (officialBuild) "Официальная сборка" else "Сборка сообщества"} · Android ${Build.VERSION.RELEASE}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = TextSecondary,
@@ -8035,7 +8123,7 @@ Box(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Triangle_15.0.0_STABLE · $patch",
+                            text = "Triangle OS $appVersion · патч $patch",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextPrimary
@@ -8339,15 +8427,23 @@ fun AboutPhoneScreen(
     val realBuild = remember { systemManager.getRealBuildNumber() }
     val realHardware = remember { systemManager.getRealHardware() }
     val realKernel = remember { systemManager.getKernelVersion() }
+    val selinuxMode = remember { systemManager.getSelinuxMode() }
+    val supportedAbis = remember { systemManager.getSupportedAbis() }
+    val trebleEnabled = remember { systemManager.isTrebleEnabled() }
+    val appVersion = remember { systemManager.getAppVersionName() }
+    val officialBuild = remember { systemManager.isOfficialBuild() }
 
     SubScreenScaffold(title = stringResource(R.string.about_title), onBack = onBack) {
         item {
             SettingCardGroup {
                 InfoRow(label = stringResource(R.string.device_name_label), value = "$realManufacturer $realModel")
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                InfoRow(label = stringResource(R.string.triangle_version_label), value = "Triangle OS 15.0")
+                InfoRow(label = stringResource(R.string.triangle_version_label), value = "Triangle OS $appVersion")
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                InfoRow(label = stringResource(R.string.android_version_label), value = "$realAndroid (Official AOSP)")
+                InfoRow(
+                    label = stringResource(R.string.android_version_label),
+                    value = "$realAndroid (AOSP, ${if (officialBuild) "release-keys" else "test-keys"})"
+                )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 InfoRow(label = stringResource(R.string.build_number_label), value = realBuild)
             }
@@ -8366,13 +8462,16 @@ fun AboutPhoneScreen(
 
         item {
             SettingCardGroup {
-                InfoRow(label = stringResource(R.string.processor_label), value = "ARM64-v8a ($realHardware)")
+                InfoRow(label = stringResource(R.string.processor_label), value = "$supportedAbis ($realHardware)")
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                InfoRow(label = "Treble Architecture", value = "System-as-root (GSI)")
+                InfoRow(
+                    label = "Treble Architecture",
+                    value = if (trebleEnabled) "Включён (system-as-root, GSI)" else "Не поддерживается"
+                )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 InfoRow(label = stringResource(R.string.kernel_label), value = realKernel)
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                InfoRow(label = "SELinux Mode", value = "Enforcing")
+                InfoRow(label = "SELinux Mode", value = selinuxMode)
             }
         }
     }

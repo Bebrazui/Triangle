@@ -13,13 +13,31 @@ data class HistoryEntry(
 /**
  * История вычислений хранится в SharedPreferences в JSON.
  * Битые данные не роняют приложение: история просто очищается.
+ *
+ * Настройки истории (лимит записей и сохранение между запусками) лежат там же,
+ * чтобы не заводить второй источник правды.
  */
 class HistoryStore(context: Context) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences("triangle_calculator", Context.MODE_PRIVATE)
 
+    /** Сколько записей хранить. Всегда в пределах [MIN_ENTRIES]..[MAX_ENTRIES]. */
+    var limit: Int
+        get() = prefs.getInt(KEY_LIMIT, DEFAULT_LIMIT).coerceIn(MIN_ENTRIES, MAX_ENTRIES)
+        set(value) {
+            prefs.edit().putInt(KEY_LIMIT, value.coerceIn(MIN_ENTRIES, MAX_ENTRIES)).apply()
+        }
+
+    /** Сохранять ли историю между запусками. */
+    var persist: Boolean
+        get() = prefs.getBoolean(KEY_PERSIST, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_PERSIST, value).apply()
+        }
+
     fun load(): List<HistoryEntry> {
+        if (!persist) return emptyList()
         val raw = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
@@ -36,6 +54,7 @@ class HistoryStore(context: Context) {
                             timestamp = item.optLong("timestamp", 0L)
                         )
                     )
+                    if (size >= limit) break
                 }
             }
         } catch (e: Exception) {
@@ -46,8 +65,12 @@ class HistoryStore(context: Context) {
 
     fun save(entries: List<HistoryEntry>) {
         try {
+            if (!persist) {
+                prefs.edit().remove(KEY_HISTORY).apply()
+                return
+            }
             val array = JSONArray()
-            entries.take(MAX_ENTRIES).forEach { entry ->
+            entries.take(limit).forEach { entry ->
                 array.put(
                     JSONObject().apply {
                         put("expression", entry.expression)
@@ -63,7 +86,13 @@ class HistoryStore(context: Context) {
     }
 
     companion object {
-        const val MAX_ENTRIES = 50
+        const val MIN_ENTRIES = 10
+        const val MAX_ENTRIES = 100
+        const val DEFAULT_LIMIT = 50
+        val LIMIT_OPTIONS = listOf(10, 25, 50, 100)
+
         private const val KEY_HISTORY = "history_json"
+        private const val KEY_LIMIT = "history_limit"
+        private const val KEY_PERSIST = "history_persist"
     }
 }

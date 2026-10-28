@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Дополнительные привилегированные разрешения для TriangleSettings.
+  Штатный allowlist GSI (/system_ext/etc/permissions/com.android.settings.xml)
+  уже покрывает BATTERY_STATS, TETHER_PRIVILEGED, OVERRIDE_WIFI_CONFIG,
+  STATUS_BAR, MANAGE_USERS и т.п.; здесь только то, чего в нём нет.
+-->
+<permissions>
+    <privapp-permissions package="com.android.settings">
+        <permission name="android.permission.NETWORK_SETTINGS" />
+        <permission name="android.permission.NETWORK_SETUP_WIZARD" />
+        <permission name="android.permission.NFC_PRIVILEGED" />
+        <permission name="android.permission.MANAGE_APP_OPS_MODES" />
+        <permission name="android.permission.MANAGE_NOTIFICATIONS" />
+        <permission name="android.permission.MODIFY_QUIET_MODE" />
+        <permission name="android.permission.PEERS_MAC_ADDRESS" />
+        <permission name="android.permission.READ_PRIVILEGED_PHONE_STATE" />
+        <permission name="android.permission.WRITE_APN_SETTINGS" />
+    </privapp-permissions>
+</permissions>

@@ -66,29 +66,130 @@ import org.triangle.settings.ui.icons.Phosphor
 import org.triangle.settings.ui.theme.*
 
 class MainActivity : ComponentActivity() {
+
+    /** Навигационная цель из внешнего интента: шторка, другие приложения. */
+    private var navTarget by mutableStateOf<NavTarget?>(null)
+    private var navSequence = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val systemManager = RealSystemManager(this)
-
-        val targetPkg = intent?.data?.schemeSpecificPart ?: ""
-        val targetScreen = when (intent?.action) {
-            "android.settings.MANAGE_UNKNOWN_APP_SOURCES" -> if (targetPkg.isNotEmpty()) Screen.APP_PERMISSIONS else Screen.ALL_APPS
-            "android.settings.APPLICATION_DETAILS_SETTINGS" -> if (targetPkg.isNotEmpty()) Screen.APP_INFO else Screen.ALL_APPS
-            "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" -> if (targetPkg.isNotEmpty()) Screen.APP_PERMISSIONS else Screen.ALL_APPS
-            else -> Screen.MAIN
-        }
+        val target = resolveNavTarget(intent, ++navSequence)
+        navTarget = target
 
         setContent {
             TriangleSettingsTheme(systemManager) {
                 MainAppNavigation(
                     systemManager = systemManager,
-                    initialScreen = targetScreen,
-                    initialPackageName = targetPkg
+                    initialScreen = target?.screen ?: Screen.MAIN,
+                    initialPackageName = target?.packageName ?: "",
+                    externalTarget = navTarget
                 )
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        navTarget = resolveNavTarget(intent, ++navSequence)
+    }
+}
+
+/** Цель навигации с идентификатором, чтобы повторный интент снова срабатывал. */
+data class NavTarget(
+    val screen: Screen,
+    val packageName: String = "",
+    val id: Long = 0L
+)
+
+/**
+ * Сопоставляет системный интент экрану настроек. Плитки шторки и сторонние
+ * приложения шлют `android.settings.*`, включая panel-экшены, — без этой
+ * таблицы они открывали бы главный экран вместо нужного раздела.
+ */
+private fun resolveNavTarget(intent: Intent?, id: Long = 0L): NavTarget? {
+    if (intent == null) return null
+    val action = intent.action ?: return null
+    val pkg = intent.data?.schemeSpecificPart
+        ?: intent.getStringExtra("android.provider.extra.APP_PACKAGE")
+        ?: intent.getStringExtra("android.intent.extra.PACKAGE_NAME")
+        ?: ""
+
+    val screen = when (action) {
+        Settings.ACTION_SETTINGS -> Screen.MAIN
+
+        Settings.ACTION_WIRELESS_SETTINGS,
+        Settings.ACTION_AIRPLANE_MODE_SETTINGS,
+        "android.settings.DATA_SAVER_SETTINGS",
+        "android.settings.TETHER_SETTINGS",
+        "android.settings.NETWORK_OPERATOR_SETTINGS" -> Screen.NETWORK
+
+        Settings.ACTION_WIFI_SETTINGS,
+        "android.settings.panel.action.INTERNET_CONNECTIVITY",
+        "android.settings.panel.action.WIFI" -> Screen.WIFI_SETTINGS
+
+        Settings.ACTION_VPN_SETTINGS -> Screen.VPN_SETTINGS
+
+        Settings.ACTION_BLUETOOTH_SETTINGS -> Screen.CONNECTED_DEVICES
+        Settings.ACTION_NFC_SETTINGS,
+        "android.settings.panel.action.NFC",
+        "android.settings.panel.action.MEDIA_OUTPUT" -> Screen.CONNECTION_PREFERENCES
+
+        Settings.ACTION_BATTERY_SAVER_SETTINGS -> Screen.BATTERY
+
+        Settings.ACTION_DISPLAY_SETTINGS,
+        "android.settings.NIGHT_DISPLAY_SETTINGS" -> Screen.DISPLAY
+
+        Settings.ACTION_SOUND_SETTINGS,
+        "android.settings.panel.action.VOLUME" -> Screen.SOUND
+
+        Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS,
+        "android.settings.ZEN_MODE_SETTINGS",
+        "android.settings.ZEN_MODE_AUTO_RULE_SETTINGS",
+        "android.settings.ZEN_MODE_SCHEDULE_RULE_SETTINGS",
+        "android.settings.ZEN_MODE_EVENT_RULE_SETTINGS",
+        "android.settings.ZEN_MODE_BLOCKED_EFFECTS_SETTINGS",
+        "android.settings.ZEN_MODE_ON_DND_CARD_SETTINGS" -> Screen.DND_SETTINGS
+
+        "android.settings.NOTIFICATION_SETTINGS",
+        "android.settings.NOTIFICATION_ASSISTANT_SETTINGS" ->
+            if (pkg.isNotEmpty()) Screen.APP_NOTIFICATION_SETTINGS else Screen.NOTIFICATIONS
+
+        Settings.ACTION_APP_NOTIFICATION_SETTINGS -> Screen.APP_NOTIFICATION_SETTINGS
+
+        Settings.ACTION_APPLICATION_SETTINGS,
+        Settings.ACTION_MANAGE_ALL_APPLICATIONS_SETTINGS -> Screen.ALL_APPS
+
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS ->
+            if (pkg.isNotEmpty()) Screen.APP_INFO else Screen.ALL_APPS
+
+        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION ->
+            if (pkg.isNotEmpty()) Screen.APP_PERMISSIONS else Screen.ALL_APPS
+
+        Settings.ACTION_LOCATION_SOURCE_SETTINGS -> Screen.LOCATION
+        Settings.ACTION_SECURITY_SETTINGS, Settings.ACTION_PRIVACY_SETTINGS -> Screen.SECURITY
+        Settings.ACTION_ACCESSIBILITY_SETTINGS -> Screen.ACCESSIBILITY
+
+        Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
+        Settings.ACTION_MEMORY_CARD_SETTINGS -> Screen.STORAGE
+
+        Settings.ACTION_DEVICE_INFO_SETTINGS -> Screen.ABOUT_PHONE
+        "android.settings.SYSTEM_UPDATE_SETTINGS" -> Screen.SYSTEM_UPDATE
+        Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS -> Screen.DEVELOPER_OPTIONS
+        "android.settings.PRIVATE_DNS_SETTINGS" -> Screen.PRIVATE_DNS
+        "android.settings.WIFI_IP_SETTINGS" -> Screen.WIFI_SETTINGS
+
+        "android.settings.INPUT_METHOD_SETTINGS",
+        "android.settings.SYNC_SETTINGS" -> Screen.SYSTEM
+
+        else -> return null
+    }
+
+    android.util.Log.d("TriangleNav", "intent $action -> $screen (pkg=$pkg)")
+    return NavTarget(screen, pkg, id)
 }
 
 @Composable
@@ -210,11 +311,20 @@ enum class Screen {
 fun MainAppNavigation(
     systemManager: RealSystemManager,
     initialScreen: Screen = Screen.MAIN,
-    initialPackageName: String = ""
+    initialPackageName: String = "",
+    externalTarget: NavTarget? = null
 ) {
     var currentScreen by remember { mutableStateOf(initialScreen) }
     var selectedRoot by remember { mutableStateOf("KernelSU") }
     var selectedPackageName by remember { mutableStateOf(initialPackageName) }
+
+    // Повторный запуск с другим интентом (плитка в шторке, стороннее приложение)
+    // должен переключать экран даже при уже открытой activity.
+    LaunchedEffect(externalTarget?.id) {
+        val target = externalTarget ?: return@LaunchedEffect
+        if (target.packageName.isNotEmpty()) selectedPackageName = target.packageName
+        currentScreen = target.screen
+    }
 
     BackHandler(enabled = currentScreen != Screen.MAIN) {
         currentScreen = when (currentScreen) {

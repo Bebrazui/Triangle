@@ -44,6 +44,7 @@
             android:name=".MainActivity"
             android:directBootAware="true"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@android:style/Theme.Material.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -53,17 +54,49 @@
                 <action android:name="android.settings.SETTINGS" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <!-- Системные экраны и панели шторки: без них системный интент
+                 открывает главный экран вместо нужного раздела. -->
             <intent-filter>
-                <action android:name="android.settings.MANAGE_UNKNOWN_APP_SOURCES" />
+                <action android:name="android.settings.WIRELESS_SETTINGS" />
+                <action android:name="android.settings.AIRPLANE_MODE_SETTINGS" />
+                <action android:name="android.settings.DATA_SAVER_SETTINGS" />
+                <action android:name="android.settings.TETHER_SETTINGS" />
+                <action android:name="android.settings.NETWORK_OPERATOR_SETTINGS" />
+                <action android:name="android.settings.WIFI_SETTINGS" />
+                <action android:name="android.settings.VPN_SETTINGS" />
+                <action android:name="android.settings.BLUETOOTH_SETTINGS" />
+                <action android:name="android.settings.NFC_SETTINGS" />
+                <action android:name="android.settings.DISPLAY_SETTINGS" />
+                <action android:name="android.settings.NIGHT_DISPLAY_SETTINGS" />
+                <action android:name="android.settings.SOUND_SETTINGS" />
+                <action android:name="android.settings.ZEN_MODE_PRIORITY_SETTINGS" />
+                <action android:name="android.settings.ZEN_MODE_SETTINGS" />
+                <action android:name="android.settings.BATTERY_SAVER_SETTINGS" />
+                <action android:name="android.settings.NOTIFICATION_SETTINGS" />
+                <action android:name="android.settings.NOTIFICATION_ASSISTANT_SETTINGS" />
+                <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
+                <action android:name="android.settings.APPLICATION_SETTINGS" />
+                <action android:name="android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS" />
+                <action android:name="android.settings.LOCATION_SOURCE_SETTINGS" />
+                <action android:name="android.settings.SECURITY_SETTINGS" />
+                <action android:name="android.settings.PRIVACY_SETTINGS" />
+                <action android:name="android.settings.ACCESSIBILITY_SETTINGS" />
+                <action android:name="android.settings.INTERNAL_STORAGE_SETTINGS" />
+                <action android:name="android.settings.MEMORY_CARD_SETTINGS" />
+                <action android:name="android.settings.DEVICE_INFO_SETTINGS" />
+                <action android:name="android.settings.SYSTEM_UPDATE_SETTINGS" />
+                <action android:name="android.settings.INPUT_METHOD_SETTINGS" />
+                <action android:name="android.settings.SYNC_SETTINGS" />
+                <action android:name="android.settings.panel.action.INTERNET_CONNECTIVITY" />
+                <action android:name="android.settings.panel.action.WIFI" />
+                <action android:name="android.settings.panel.action.VOLUME" />
+                <action android:name="android.settings.panel.action.NFC" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="package" />
             </intent-filter>
             <intent-filter>
+                <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
                 <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="package" />
-            </intent-filter>
-            <intent-filter>
+                <action android:name="android.settings.MANAGE_UNKNOWN_APP_SOURCES" />
                 <action android:name="android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="package" />

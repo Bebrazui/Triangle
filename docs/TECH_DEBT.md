@@ -46,6 +46,12 @@
   (`ACTION_FOUND`) и BLE (`BluetoothLeScanner`), 12 секунд, список только
   найденных устройств с адресом и RSSI; тап запускает `createBond()`.
   Разрешения `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` запрашиваются на экране.
+- Навигация по системным интентам: `MainActivity` объявляет фильтры для
+  `android.settings.*` (Wi-Fi, Bluetooth, батарея, уведомления, приложения,
+  конфиденциальность, хранилище, «О телефоне» и др.) и панельных экшенов
+  `android.settings.panel.action.*`; `resolveNavTarget` сопоставляет action
+  нужному экрану, `singleTop` + `onNewIntent` переключают уже открытую
+  activity. Неизвестный action по-прежнему открывает главный экран.
 
 ## Осталось (осознанно не закрыто в этом проходе)
 

@@ -60,8 +60,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.triangle.settings.notification.NotificationLog
 import org.triangle.settings.system.BluetoothScanner
+import org.triangle.settings.system.HotspotConfig
 import org.triangle.settings.system.RealAppItem
 import org.triangle.settings.system.RealSystemManager
+import org.triangle.settings.system.TetheringController
 import org.triangle.settings.ui.icons.Phosphor
 import org.triangle.settings.ui.theme.*
 
@@ -2191,41 +2193,123 @@ fun HotspotSettingsSubScreen(
     systemManager: RealSystemManager,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    var wifiTether by remember { mutableStateOf(systemManager.isWifiHotspotOn()) }
     var usbTether by remember { mutableStateOf(systemManager.isUsbTetheringOn()) }
     var btTether by remember { mutableStateOf(systemManager.isBluetoothTetheringOn()) }
+    var autoOff by remember { mutableStateOf(systemManager.isHotspotAutoOffOn()) }
+    var config by remember { mutableStateOf<HotspotConfig?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val available = remember { systemManager.isTetheringAvailable() }
+
+    // Состояние читается из системы: точку доступа можно включить или
+    // выключить из шторки, и переключатель должен это отражать.
+    LaunchedEffect(Unit) {
+        while (true) {
+            config = systemManager.getHotspotConfig()
+            wifiTether = systemManager.isWifiHotspotOn()
+            usbTether = systemManager.isUsbTetheringOn()
+            btTether = systemManager.isBluetoothTetheringOn()
+            autoOff = systemManager.isHotspotAutoOffOn()
+            delay(3000)
+        }
+    }
+
+    fun switchTethering(type: Int, enable: Boolean) {
+        if (busy) return
+        busy = true
+        systemManager.setTethering(type, enable) { error ->
+            busy = false
+            if (error != null) {
+                // Возвращаем переключатели к реальному состоянию системы.
+                wifiTether = systemManager.isWifiHotspotOn()
+                usbTether = systemManager.isUsbTetheringOn()
+                btTether = systemManager.isBluetoothTetheringOn()
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val wifiSubtitle = buildString {
+        val cfg = config
+        if (cfg != null) {
+            append(cfg.ssid)
+            append(" · ")
+            append(cfg.security)
+            append(" · ")
+            append(cfg.band)
+        } else {
+            append("Конфигурация точки доступа недоступна")
+        }
+        append(if (wifiTether) " — включена" else " — выключена")
+    }
 
     SubScreenScaffold(title = stringResource(R.string.hotspot_label), onBack = onBack) {
+        if (!available) {
+            item {
+                SettingCardGroup {
+                    SettingSimpleRow(
+                        title = "Тетеринг недоступен",
+                        subtitle = "В системе нет службы TetheringManager, переключатели не работают"
+                    )
+                }
+            }
+        }
         item {
             SettingCardGroup {
-                SettingSimpleRow(
+                SettingToggleRow(
                     title = "Точка доступа Wi-Fi",
-                    subtitle = "Triangle-AP · WPA2-Personal (Отключена)"
+                    subtitle = wifiSubtitle,
+                    checked = wifiTether,
+                    enabled = available && !busy,
+                    onCheckedChange = { enable ->
+                        wifiTether = enable
+                        switchTethering(TetheringController.TYPE_WIFI, enable)
+                    }
                 )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 SettingToggleRow(
                     title = "USB-модем",
-                    subtitle = "Раздавать мобильный интернет на ПК через кабель",
+                    subtitle = if (usbTether) "Интернет раздаётся по кабелю" else "Нужен подключённый USB-кабель",
                     checked = usbTether,
-                    onCheckedChange = {
-                        usbTether = it
-                        systemManager.setUsbTethering(it)
+                    enabled = available && !busy,
+                    onCheckedChange = { enable ->
+                        usbTether = enable
+                        switchTethering(TetheringController.TYPE_USB, enable)
                     }
                 )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 SettingToggleRow(
                     title = "Bluetooth-модем",
-                    subtitle = "Предоставлять интернет-соединение по Bluetooth",
+                    subtitle = if (btTether) "Интернет раздаётся по Bluetooth" else "Требуется сопряжённое устройство",
                     checked = btTether,
-                    onCheckedChange = {
-                        btTether = it
-                        systemManager.setBluetoothTethering(it)
+                    enabled = available && !busy,
+                    onCheckedChange = { enable ->
+                        btTether = enable
+                        switchTethering(TetheringController.TYPE_BLUETOOTH, enable)
                     }
                 )
                 HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                SettingSimpleRow(
+                SettingToggleRow(
                     title = "Автоотключение точки доступа",
-                    subtitle = "Выключать точку при отсутствии подключенных устройств"
+                    subtitle = "Выключать точку, когда к ней не подключены устройства",
+                    checked = autoOff,
+                    onCheckedChange = { enable ->
+                        if (systemManager.setHotspotAutoOff(enable)) {
+                            autoOff = enable
+                        } else {
+                            Toast.makeText(context, "Не удалось изменить настройку", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 )
+            }
+        }
+        val passphrase = config?.passphrase
+        if (!passphrase.isNullOrEmpty()) {
+            item {
+                SettingCardGroup {
+                    InfoRow(label = "Пароль точки доступа", value = passphrase)
+                }
             }
         }
     }
@@ -9332,7 +9416,8 @@ fun SettingToggleRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier
@@ -9341,13 +9426,14 @@ fun SettingToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium, fontSize = 16.sp, color = TextPrimary)
+            Text(text = title, style = MaterialTheme.typography.titleMedium, fontSize = 16.sp, color = if (enabled) TextPrimary else TextSecondary)
             Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp, color = TextSecondary)
         }
 
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = PaperBackground,
                 checkedTrackColor = BorderBold,

@@ -47,6 +47,13 @@ data class RealWifiItem(
     val isConnected: Boolean
 )
 
+data class HotspotConfig(
+    val ssid: String,
+    val security: String,
+    val band: String,
+    val passphrase: String?
+)
+
 data class RealSimInfo(
     val subId: Int,
     val simSlotIndex: Int,
@@ -412,35 +419,76 @@ class RealSystemManager(private val context: Context) {
     }
 
     // Точка доступа и модем
-    fun isWifiHotspotOn(): Boolean {
+    private val tethering by lazy { TetheringController(context) }
+
+    fun isWifiHotspotOn(): Boolean = tethering.isWifiTetheringOn()
+
+    fun isUsbTetheringOn(): Boolean = tethering.isUsbTetheringOn()
+
+    fun isBluetoothTetheringOn(): Boolean = tethering.isBluetoothTetheringOn()
+
+    /** false, если в системе нет службы тетеринга — тогда переключатели отключаются. */
+    fun isTetheringAvailable(): Boolean = tethering.isAvailable()
+
+    fun setTethering(type: Int, enable: Boolean, onResult: (String?) -> Unit) {
+        tethering.setTethering(type, enable, onResult)
+    }
+
+    /** Реальная конфигурация точки доступа (SSID, защита, диапазон) или null. */
+    fun getHotspotConfig(): HotspotConfig? {
         return try {
-            val method = wifiManager?.javaClass?.getDeclaredMethod("isWifiApEnabled")
-            (method?.invoke(wifiManager) as? Boolean) == true
-        } catch (e: Exception) { false }
+            val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val method = wifi.javaClass.getMethod("getSoftApConfiguration")
+            val cfg = method.invoke(wifi) ?: return null
+            val ssid = cfg.javaClass.getMethod("getSsid").invoke(cfg) as? String ?: return null
+            val security = (cfg.javaClass.getMethod("getSecurityType").invoke(cfg) as? Int)
+                ?.let { hotspotSecurityLabel(it) } ?: "защита неизвестна"
+            val band = (cfg.javaClass.getMethod("getBand").invoke(cfg) as? Int)
+                ?.let { hotspotBandLabel(it) } ?: "диапазон неизвестен"
+            val passphrase = try {
+                cfg.javaClass.getMethod("getPassphrase").invoke(cfg) as? String
+            } catch (e: Exception) {
+                null
+            }
+            HotspotConfig(ssid = ssid, security = security, band = band, passphrase = passphrase)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 
-    fun isUsbTetheringOn(): Boolean {
+    private fun hotspotSecurityLabel(type: Int): String = when (type) {
+        0 -> "Открытая"
+        1 -> "WPA2-Personal"
+        2 -> "WPA2/WPA3-Personal"
+        3 -> "WPA3-Personal"
+        4 -> "WPA3-OWE (переходный)"
+        5 -> "WPA3-OWE"
+        else -> "тип $type"
+    }
+
+    private fun hotspotBandLabel(band: Int): String = when (band) {
+        1 -> "2,4 ГГц"
+        2 -> "5 ГГц"
+        3 -> "6 ГГц"
+        4 -> "60 ГГц"
+        else -> "диапазон $band"
+    }
+
+    /** Реальный флаг «выключать точку доступа при отсутствии устройств». */
+    fun isHotspotAutoOffOn(): Boolean {
         return try {
-            Settings.Secure.getInt(context.contentResolver, "usb_tethering_enabled", 0) == 1
-        } catch (e: Exception) { false }
+            Settings.Secure.getInt(context.contentResolver, "soft_ap_timeout_enabled", 1) == 1
+        } catch (e: Exception) { true }
     }
 
-    fun setUsbTethering(enable: Boolean) {
-        try {
-            Settings.Secure.putInt(context.contentResolver, "usb_tethering_enabled", if (enable) 1 else 0)
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-
-    fun isBluetoothTetheringOn(): Boolean {
+    fun setHotspotAutoOff(enable: Boolean): Boolean {
         return try {
-            Settings.Secure.getInt(context.contentResolver, "bluetooth_tethering_on", 0) == 1
-        } catch (e: Exception) { false }
-    }
-
-    fun setBluetoothTethering(enable: Boolean) {
-        try {
-            Settings.Secure.putInt(context.contentResolver, "bluetooth_tethering_on", if (enable) 1 else 0)
-        } catch (e: Exception) { e.printStackTrace() }
+            Settings.Secure.putInt(context.contentResolver, "soft_ap_timeout_enabled", if (enable) 1 else 0)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 
     // ========================================

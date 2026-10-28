@@ -2660,6 +2660,8 @@ fun ConnectionPreferencesSubScreen(
     var quickShare by remember { mutableStateOf(systemManager.isQuickShareOn()) }
     val nfcAvailable = remember { systemManager.isNfcAvailable() }
     var nfcOn by remember { mutableStateOf(systemManager.isNfcOn()) }
+    var nfcBusy by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     // Реальные интенты: строку показываем, только если система умеет её обработать.
     val castIntent = remember {
@@ -2687,7 +2689,27 @@ fun ConnectionPreferencesSubScreen(
                         title = "NFC",
                         subtitle = "Бесконтактная оплата и обмен данными при касании",
                         checked = nfcOn,
-                        onCheckedChange = { nfcOn = it }
+                        onCheckedChange = { requested ->
+                            if (!nfcBusy) {
+                                nfcBusy = true
+                                coroutineScope.launch {
+                                    val ok = withContext(Dispatchers.IO) {
+                                        systemManager.setNfc(requested)
+                                    }
+                                    // Показываем фактическое состояние системы,
+                                    // а не то, что попросил пользователь.
+                                    nfcOn = systemManager.isNfcOn()
+                                    nfcBusy = false
+                                    if (!ok) {
+                                        Toast.makeText(
+                                            context,
+                                            "Система не разрешила переключить NFC",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        }
                     )
                     HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 }

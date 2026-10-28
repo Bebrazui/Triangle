@@ -700,6 +700,32 @@ class RealSystemManager(private val context: Context) {
         } catch (e: Exception) { false }
     }
 
+    /**
+     * Переключение NFC. enable()/disable() помечены @SystemApi и требуют
+     * NFC_PRIVILEGED, поэтому вызываем их рефлексией: публичного SDK-метода
+     * для этого нет. Возвращаем фактическое состояние после переключения,
+     * а не факт вызова — система может отказать.
+     *
+     * Метод блокирующий (опрос до ~1 с), вызывать вне главного потока.
+     */
+    fun setNfc(enable: Boolean): Boolean {
+        return try {
+            val adapter = android.nfc.NfcAdapter.getDefaultAdapter(context) ?: return false
+            val methodName = if (enable) "enable" else "disable"
+            android.nfc.NfcAdapter::class.java.getMethod(methodName).invoke(adapter)
+
+            var attempts = 0
+            while (adapter.isEnabled != enable && attempts < 20) {
+                Thread.sleep(50)
+                attempts++
+            }
+            adapter.isEnabled == enable
+        } catch (e: Exception) {
+            android.util.Log.w("RealSystemManager", "cannot change NFC state", e)
+            false
+        }
+    }
+
     fun isQuickShareOn(): Boolean {
         return try {
             Settings.Secure.getInt(context.contentResolver, "nearby_sharing_slice", 1) == 1

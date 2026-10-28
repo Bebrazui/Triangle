@@ -31,6 +31,17 @@
     <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
+    <!-- Привилегированные возможности. Каждое из этих разрешений уже
+         перечислено в system/permissions/triangle-settings-privapp.xml:
+         allowlist выдаёт только те привилегированные разрешения, которые
+         приложение действительно запрашивает в манифесте. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-permission android:name="android.permission.NFC_PRIVILEGED" />
+    <uses-permission android:name="android.permission.MANAGE_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.MODIFY_QUIET_MODE" />
+    <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE" />
+    <uses-permission android:name="android.permission.WRITE_APN_SETTINGS" />
+
     <application
         android:allowBackup="true"
         android:directBootAware="true"
@@ -40,6 +51,28 @@
         android:supportsRtl="true"
         android:usesNonSdkApi="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <!-- Домашний экран на время загрузки. Система резолвит HOME только среди
+             directBootAware-компонентов, пока пользователь заблокирован. Без
+             такого экрана boot не завершается и ввод остаётся отключённым.
+             Приоритет -1000 гарантирует, что после разблокировки выбирается
+             настоящий лаунчер. -->
+        <activity
+            android:name=".FallbackHome"
+            android:directBootAware="true"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:stateNotNeeded="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter android:priority="-1000">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".MainActivity"
             android:directBootAware="true"

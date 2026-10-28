@@ -13,6 +13,7 @@ aosp_reference/
 reference/
 output/*.img
 output/*.img.xz
+output/*.bak
 *.img
 *.img.xz
 

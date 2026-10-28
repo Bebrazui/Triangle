@@ -1375,17 +1375,44 @@ class RealSystemManager(private val context: Context) {
     fun isNotificationListenerConnected(): Boolean =
         org.triangle.settings.notification.NotificationLogService.connected
 
+    @Volatile
+    private var rootAvailable: Boolean? = null
+
     /**
-     * Может ли приложение менять appops-режимы. MANAGE_APP_OPS_MODES — привилегированное
-     * разрешение: на обычной установке оно не выдаётся, поэтому переключать
-     * уведомления чужих приложений можно только после интеграции в прошивку.
+     * Доступен ли root (Magisk выдал разрешение этому UID).
+     *
+     * Нужен там, где Android требует разрешение с protectionLevel=signature, а
+     * наша сборка подписана не тем ключом, что GSI. Проверка кэшируется: su
+     * может показать диалог Magisk, повторять его на каждый вызов не нужно.
+     */
+    fun isRootAvailable(): Boolean {
+        rootAvailable?.let { return it }
+        val available = try {
+            val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val finished = proc.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) proc.destroy()
+            finished && proc.exitValue() == 0
+        } catch (e: Exception) {
+            false
+        }
+        rootAvailable = available
+        return available
+    }
+
+    /**
+     * Может ли приложение менять appops-режимы.
+     *
+     * MANAGE_APP_OPS_MODES на этой GSI имеет protectionLevel
+     * signature|installer|verifier|role — флага privileged нет, поэтому
+     * allowlist прошивки его не выдаёт, а ключ GSI нам недоступен. Единственный
+     * реальный путь — root: `appops set` от uid 0.
      */
     fun canManageAppOps(): Boolean = try {
         context.checkSelfPermission("android.permission.MANAGE_APP_OPS_MODES") ==
             PackageManager.PERMISSION_GRANTED
     } catch (e: Exception) {
         false
-    }
+    } || isRootAvailable()
 
     /**
      * Разрешены ли уведомления конкретному приложению (appops POST_NOTIFICATION),
@@ -2592,7 +2619,16 @@ class RealSystemManager(private val context: Context) {
     }
 
     fun executeRootCommand(cmd: String): Boolean {
-        val suPaths = listOf("su", "/system_ext/bin/su", "/product/bin/su", "/system/bin/su", "/system/xbin/su", "/data/adb/magisk/magisk", "/data/adb/ksu/bin/su")
+        val suPaths = listOf(
+            "su",
+            "/debug_ramdisk/su",
+            "/system_ext/bin/su",
+            "/product/bin/su",
+            "/system/bin/su",
+            "/system/xbin/su",
+            "/data/adb/magisk/magisk",
+            "/data/adb/ksu/bin/su"
+        )
         for (su in suPaths) {
             try {
                 val proc = Runtime.getRuntime().exec(arrayOf(su, "-c", cmd))
@@ -2852,24 +2888,44 @@ class RealSystemManager(private val context: Context) {
 
     fun setAppNotificationsEnabled(pkg: String, enable: Boolean): Boolean {
         val targetMode = if (enable) AppOpsManager.MODE_ALLOWED else AppOpsManager.MODE_IGNORED
-        return try {
-            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-            val uid = context.packageManager.getPackageUid(pkg, 0)
-            // setMode(String, int, String, int) доступен только системным
-            // приложениям (MANAGE_APP_OPS_MODES) и скрыт из публичного SDK.
-            val setMode = AppOpsManager::class.java.getMethod(
-                "setMode",
-                String::class.java,
-                Int::class.javaPrimitiveType,
-                String::class.java,
-                Int::class.javaPrimitiveType
-            )
-            setMode.invoke(appOps, OP_POST_NOTIFICATION, uid, pkg, targetMode)
-            isAppNotificationsAllowed(pkg) == enable
+
+        // 1. Прямой вызов, если разрешение всё-таки выдано.
+        try {
+            if (context.checkSelfPermission("android.permission.MANAGE_APP_OPS_MODES") ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+                val uid = context.packageManager.getPackageUid(pkg, 0)
+                // setMode(String, int, String, int) скрыт из публичного SDK.
+                val setMode = AppOpsManager::class.java.getMethod(
+                    "setMode",
+                    String::class.java,
+                    Int::class.javaPrimitiveType,
+                    String::class.java,
+                    Int::class.javaPrimitiveType
+                )
+                setMode.invoke(appOps, OP_POST_NOTIFICATION, uid, pkg, targetMode)
+                if (isAppNotificationsAllowed(pkg) == enable) return true
+            }
         } catch (e: Exception) {
-            android.util.Log.w("RealSystemManager", "cannot change notifications for $pkg", e)
-            false
+            android.util.Log.w("RealSystemManager", "direct appops change failed for $pkg", e)
         }
+
+        // 2. Root. POST_NOTIFICATION — uid-режим, поэтому appops пишет его на uid,
+        //    а `appops get` показывает отдельной строкой «Uid mode: ...».
+        val op = if (enable) "allow" else "ignore"
+        // uid = userId * 100000 + appId; приложению доступен только свой профиль.
+        val userId = android.os.Process.myUid() / 100000
+        val command = "appops set --user $userId $pkg POST_NOTIFICATION $op"
+        if (executeRootCommand(command)) {
+            val actual = isAppNotificationsAllowed(pkg)
+            if (actual == enable) return true
+            android.util.Log.w(
+                "RealSystemManager",
+                "appops $op did not stick for $pkg (actual=$actual)"
+            )
+        }
+        return false
     }
 
     fun getDefaultAppsSummary(): Map<String, String> {

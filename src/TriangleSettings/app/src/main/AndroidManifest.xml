@@ -28,16 +28,24 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.BATTERY_STATS" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- Привилегированные возможности. Каждое из этих разрешений уже
-         перечислено в system/permissions/triangle-settings-privapp.xml:
-         allowlist выдаёт только те привилегированные разрешения, которые
-         приложение действительно запрашивает в манифесте. -->
+    <!-- Привилегированные возможности, которые эта сборка реально выдаёт.
+         protectionLevel проверен на устройстве через
+         `dumpsys package permissions`:
+         - MODIFY_QUIET_MODE — signature|privileged, выдаётся по allowlist;
+         - READ_PRIVILEGED_PHONE_STATE — signature|privileged|role (есть в
+           штатном com.android.settings.xml);
+         - WRITE_APN_SETTINGS — signature|privileged (тоже есть в штатном).
+         Не запрашиваем то, что выдать невозможно:
+         - MANAGE_APP_OPS_MODES — signature|installer|verifier|role,
+         - MANAGE_NOTIFICATIONS — signature,
+         - NFC_PRIVILEGED — вообще не объявлено в этой сборке.
+         Привилегированный allowlist не помогает: у этих разрешений нет флага
+         privileged, а подпись GSI (ключ Ponces) не совпадает с нашей. Поэтому
+         appops меняем через root, а NFC-адаптера на устройстве нет вовсе. -->
     <uses-permission android:name="android.permission.NFC" />
-    <uses-permission android:name="android.permission.NFC_PRIVILEGED" />
-    <uses-permission android:name="android.permission.MANAGE_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.MODIFY_QUIET_MODE" />
     <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE" />
     <uses-permission android:name="android.permission.WRITE_APN_SETTINGS" />

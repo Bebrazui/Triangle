@@ -8346,12 +8346,16 @@ fun AppNotificationsSubScreen(
     var apps by remember { mutableStateOf<List<RealSystemManager.AppNotificationStatus>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
-    val canManageAppOps = remember { systemManager.canManageAppOps() }
+    val scope = rememberCoroutineScope()
+    // Проверка root может занять до пары секунд (su), поэтому не на главном потоке.
+    var canManageAppOps by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
+            val manageable = systemManager.canManageAppOps()
             val list = systemManager.getAppsNotificationList()
             withContext(Dispatchers.Main) {
+                canManageAppOps = manageable
                 apps = list
             }
         }
@@ -8409,7 +8413,7 @@ fun AppNotificationsSubScreen(
         if (!canManageAppOps) {
             item {
                 Text(
-                    text = "Переключатели недоступны: системе не разрешено менять уведомления чужих приложений без привилегии MANAGE_APP_OPS_MODES. Ниже показано фактическое состояние.",
+                    text = "Переключатели недоступны: у приложения нет ни разрешения MANAGE_APP_OPS_MODES (на этой GSI оно signature-only), ни root-доступа. Ниже показано фактическое состояние.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontSize = 12.sp,
                     color = TextTertiary,
@@ -8474,16 +8478,29 @@ fun AppNotificationsSubScreen(
                                 checked = app.areNotificationsEnabled,
                                 enabled = canManageAppOps,
                                 onCheckedChange = { enabled ->
-                                    if (systemManager.setAppNotificationsEnabled(app.packageName, enabled)) {
+                                    scope.launch {
+                                        val changed = withContext(Dispatchers.IO) {
+                                            systemManager.setAppNotificationsEnabled(app.packageName, enabled)
+                                        }
+                                        // Показываем то, что реально стало, а не то,
+                                        // что попросил пользователь.
+                                        val actual = withContext(Dispatchers.IO) {
+                                            systemManager.isAppNotificationsAllowed(app.packageName)
+                                        }
                                         apps = apps.map {
                                             if (it.packageName == app.packageName) {
-                                                it.copy(areNotificationsEnabled = enabled)
+                                                it.copy(areNotificationsEnabled = actual)
                                             } else {
                                                 it
                                             }
                                         }
-                                    } else {
-                                        Toast.makeText(context, "Система не разрешила изменение", Toast.LENGTH_SHORT).show()
+                                        if (!changed) {
+                                            Toast.makeText(
+                                                context,
+                                                "Система не разрешила изменение",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
                                 },
                                 colors = SwitchDefaults.colors(

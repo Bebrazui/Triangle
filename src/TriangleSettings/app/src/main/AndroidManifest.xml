@@ -77,11 +77,16 @@
                 <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
                 <action android:name="android.settings.APPLICATION_SETTINGS" />
                 <action android:name="android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS" />
+                <action android:name="android.settings.MANAGE_APPLICATIONS_SETTINGS" />
+                <action android:name="android.settings.MANAGE_DEFAULT_APPS_SETTINGS" />
+                <action android:name="android.settings.ACCESSIBILITY_DETAILS_SETTINGS" />
+                <action android:name="android.intent.action.POWER_USAGE_SUMMARY" />
                 <action android:name="android.settings.LOCATION_SOURCE_SETTINGS" />
                 <action android:name="android.settings.SECURITY_SETTINGS" />
                 <action android:name="android.settings.PRIVACY_SETTINGS" />
                 <action android:name="android.settings.ACCESSIBILITY_SETTINGS" />
                 <action android:name="android.settings.INTERNAL_STORAGE_SETTINGS" />
+                <action android:name="android.settings.APPLICATION_DEVELOPMENT_SETTINGS" />
                 <action android:name="android.settings.MEMORY_CARD_SETTINGS" />
                 <action android:name="android.settings.DEVICE_INFO_SETTINGS" />
                 <action android:name="android.settings.SYSTEM_UPDATE_SETTINGS" />

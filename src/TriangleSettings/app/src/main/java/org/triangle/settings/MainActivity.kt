@@ -138,6 +138,7 @@ private fun resolveNavTarget(intent: Intent?, id: Long = 0L): NavTarget? {
         "android.settings.panel.action.MEDIA_OUTPUT" -> Screen.CONNECTION_PREFERENCES
 
         Settings.ACTION_BATTERY_SAVER_SETTINGS -> Screen.BATTERY
+        Intent.ACTION_POWER_USAGE_SUMMARY -> Screen.BATTERY_USAGE
 
         Settings.ACTION_DISPLAY_SETTINGS,
         "android.settings.NIGHT_DISPLAY_SETTINGS" -> Screen.DISPLAY
@@ -160,7 +161,10 @@ private fun resolveNavTarget(intent: Intent?, id: Long = 0L): NavTarget? {
         Settings.ACTION_APP_NOTIFICATION_SETTINGS -> Screen.APP_NOTIFICATION_SETTINGS
 
         Settings.ACTION_APPLICATION_SETTINGS,
-        Settings.ACTION_MANAGE_ALL_APPLICATIONS_SETTINGS -> Screen.ALL_APPS
+        Settings.ACTION_MANAGE_ALL_APPLICATIONS_SETTINGS,
+        "android.settings.MANAGE_APPLICATIONS_SETTINGS" -> Screen.ALL_APPS
+
+        "android.settings.MANAGE_DEFAULT_APPS_SETTINGS" -> Screen.DEFAULT_APPS
 
         Settings.ACTION_APPLICATION_DETAILS_SETTINGS ->
             if (pkg.isNotEmpty()) Screen.APP_INFO else Screen.ALL_APPS
@@ -171,7 +175,8 @@ private fun resolveNavTarget(intent: Intent?, id: Long = 0L): NavTarget? {
 
         Settings.ACTION_LOCATION_SOURCE_SETTINGS -> Screen.LOCATION
         Settings.ACTION_SECURITY_SETTINGS, Settings.ACTION_PRIVACY_SETTINGS -> Screen.SECURITY
-        Settings.ACTION_ACCESSIBILITY_SETTINGS -> Screen.ACCESSIBILITY
+        Settings.ACTION_ACCESSIBILITY_SETTINGS,
+        "android.settings.ACCESSIBILITY_DETAILS_SETTINGS" -> Screen.ACCESSIBILITY
 
         Settings.ACTION_INTERNAL_STORAGE_SETTINGS,
         Settings.ACTION_MEMORY_CARD_SETTINGS -> Screen.STORAGE

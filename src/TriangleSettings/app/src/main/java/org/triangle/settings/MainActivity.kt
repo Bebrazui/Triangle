@@ -58,6 +58,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.triangle.settings.keyremap.KeyRemapEditScreen
+import org.triangle.settings.keyremap.KeyRemapSubScreen
+import org.triangle.settings.keyremap.KeyTrigger
 import org.triangle.settings.notification.NotificationLog
 import org.triangle.settings.system.BluetoothScanner
 import org.triangle.settings.system.HotspotConfig
@@ -311,7 +314,9 @@ enum class Screen {
     APP_INFO,
     APP_PERMISSIONS,
     APP_NOTIFICATION_SETTINGS,
-    APP_STORAGE
+    APP_STORAGE,
+    KEY_REMAP,
+    KEY_REMAP_EDIT
 }
 
 @Composable
@@ -322,8 +327,9 @@ fun MainAppNavigation(
     externalTarget: NavTarget? = null
 ) {
     var currentScreen by remember { mutableStateOf(initialScreen) }
-    var selectedRoot by remember { mutableStateOf("KernelSU") }
     var selectedPackageName by remember { mutableStateOf(initialPackageName) }
+    var remapKeyCode by remember { mutableStateOf(android.view.KeyEvent.KEYCODE_UNKNOWN) }
+    var remapTrigger by remember { mutableStateOf(KeyTrigger.LONG) }
 
     // Повторный запуск с другим интентом (плитка в шторке, стороннее приложение)
     // должен переключать экран даже при уже открытой activity.
@@ -366,6 +372,8 @@ fun MainAppNavigation(
             Screen.SET_PIN -> Screen.SCREEN_LOCK_SETTINGS
             Screen.SET_PASSWORD -> Screen.SCREEN_LOCK_SETTINGS
             Screen.CONFIRM_OLD_CREDENTIAL -> Screen.SCREEN_LOCK_SETTINGS
+            Screen.KEY_REMAP -> Screen.SYSTEM
+            Screen.KEY_REMAP_EDIT -> Screen.KEY_REMAP
             else -> Screen.MAIN
         }
     }
@@ -518,14 +526,26 @@ fun MainAppNavigation(
             )
             Screen.ABOUT_PHONE -> AboutPhoneScreen(
                 systemManager = systemManager,
-                selectedRoot = selectedRoot,
                 onBack = { currentScreen = Screen.MAIN },
                 onOpenRootProvider = { currentScreen = Screen.ROOT_PROVIDER }
             )
             Screen.ROOT_PROVIDER -> RootProviderScreen(
-                selectedRoot = selectedRoot,
-                onSelectRoot = { selectedRoot = it },
+                systemManager = systemManager,
                 onBack = { currentScreen = Screen.ABOUT_PHONE }
+            )
+            Screen.KEY_REMAP -> KeyRemapSubScreen(
+                onEdit = { keyCode, trigger ->
+                    remapKeyCode = keyCode
+                    remapTrigger = trigger
+                    currentScreen = Screen.KEY_REMAP_EDIT
+                },
+                onBack = { currentScreen = Screen.SYSTEM }
+            )
+            Screen.KEY_REMAP_EDIT -> KeyRemapEditScreen(
+                keyCode = remapKeyCode,
+                initialTrigger = remapTrigger,
+                onSaved = { currentScreen = Screen.KEY_REMAP },
+                onBack = { currentScreen = Screen.KEY_REMAP }
             )
         }
     }
@@ -772,6 +792,13 @@ fun MainSettingsScreen(
                 keywords = listOf("система", "язык", "клавиатура", "время", "дата", "сброс", "system")
             ),
             MainSearchItem(
+                title = "Переназначение клавиш",
+                subtitle = "Долгое, двойное и тройное нажатие, свои интенты",
+                icon = Phosphor.GearSix,
+                screen = Screen.KEY_REMAP,
+                keywords = listOf("клавиши", "кнопки", "переназначение", "жесты", "клавиатура", "интент", "key", "remap", "keys", "buttons")
+            ),
+            MainSearchItem(
                 title = "Для разработчиков",
                 subtitle = "Отладка по USB, логкат, анимации",
                 icon = Phosphor.GearSix,
@@ -999,8 +1026,7 @@ fun MainSettingsScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, BorderColor, RoundedCornerShape(14.dp))
-                        .clickable { Toast.makeText(context, "Triangle OS Cloud", Toast.LENGTH_SHORT).show() },
+                        .border(1.dp, BorderColor, RoundedCornerShape(14.dp)),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = SurfaceCard),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -1038,19 +1064,12 @@ fun MainSettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = stringResource(R.string.account_subtitle),
+                                text = "Не подключён: сервер Triangle OS Cloud не настроен",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary,
                                 fontSize = 13.sp
                             )
                         }
-
-                        Icon(
-                            imageVector = Phosphor.CaretRight,
-                            contentDescription = "Open",
-                            modifier = Modifier.size(16.dp),
-                            tint = TextTertiary
-                        )
                     }
                 }
             }
@@ -1986,7 +2005,22 @@ fun VpnSettingsSubScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    Toast.makeText(context, "Подключение к ${profile.name}...", Toast.LENGTH_SHORT).show()
+                                    // Профиль — это только сохранённые параметры.
+                                    // Туннель поднимает VPN-приложение; собственного
+                                    // IKEv2/IPSec-стека в прошивке нет.
+                                    val client = vpnApps.firstOrNull()
+                                    val launch = client?.let {
+                                        context.packageManager.getLaunchIntentForPackage(it.packageName)
+                                    }
+                                    if (launch != null) {
+                                        context.startActivity(launch)
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "Нет VPN-клиента: профиль сохранён, подключить нечем",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 }
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -2024,6 +2058,13 @@ fun VpnSettingsSubScreen(
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Профили хранят только параметры подключения. Сам туннель " +
+                        "поднимает VPN-приложение — своего IKEv2/IPSec-стека в прошивке нет.",
+                    fontSize = 12.sp,
+                    color = TextTertiary
+                )
             }
             Spacer(modifier = Modifier.height(14.dp))
         }
@@ -5038,10 +5079,17 @@ fun AppNotificationSettingsSubScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val detail = remember(packageName) { systemManager.getAppDetailInfo(packageName) }
     var notifsEnabled by remember(packageName) { mutableStateOf(detail?.isNotificationsEnabled ?: true) }
-    val canManageAppOps = remember { systemManager.canManageAppOps() }
+    // Проверка root обращается к su — только в фоне.
+    var canManageAppOps by remember { mutableStateOf(false) }
     val journalChannels = remember(packageName) { NotificationLog.channelsFor(context, packageName) }
+
+    LaunchedEffect(packageName) {
+        val manageable = withContext(Dispatchers.IO) { systemManager.canManageAppOps() }
+        if (manageable != canManageAppOps) canManageAppOps = manageable
+    }
 
     SubScreenScaffold(title = "Уведомления", onBack = onBack) {
         // Инфо-карточка приложения
@@ -5100,10 +5148,17 @@ fun AppNotificationSettingsSubScreen(
                         subtitle = if (notifsEnabled) "Приложению разрешено отправлять уведомления" else "Все уведомления приложения заблокированы",
                         checked = notifsEnabled,
                         onCheckedChange = { isChecked ->
-                            if (systemManager.setAppNotificationsEnabled(packageName, isChecked)) {
-                                notifsEnabled = isChecked
-                            } else {
-                                Toast.makeText(context, "Не удалось изменить статус уведомлений", Toast.LENGTH_SHORT).show()
+                            scope.launch {
+                                val changed = withContext(Dispatchers.IO) {
+                                    systemManager.setAppNotificationsEnabled(packageName, isChecked)
+                                }
+                                val actual = withContext(Dispatchers.IO) {
+                                    systemManager.isAppNotificationsAllowed(packageName)
+                                }
+                                notifsEnabled = actual
+                                if (!changed) {
+                                    Toast.makeText(context, "Не удалось изменить статус уведомлений", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     )
@@ -5111,7 +5166,7 @@ fun AppNotificationSettingsSubScreen(
                     SettingSimpleRow(
                         title = "Все уведомления ${detail?.appName ?: ""}",
                         subtitle = (if (notifsEnabled) "Разрешены" else "Заблокированы") +
-                            " · изменять чужие приложения нельзя без системной привилегии"
+                            " · нет ни привилегии, ни root-доступа"
                     )
                 }
             }
@@ -5140,6 +5195,15 @@ fun AppNotificationSettingsSubScreen(
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Список собран по реальным уведомлениям. Менять важность канала нельзя: " +
+                        "для этого нужно разрешение MANAGE_NOTIFICATIONS с protectionLevel=signature, " +
+                        "а GSI подписана ключом, которого у нас нет.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 12.sp,
+                    color = TextTertiary
+                )
                 Spacer(modifier = Modifier.height(32.dp))
             }
         } else {
@@ -6796,6 +6860,13 @@ fun SystemSubScreen(systemManager: RealSystemManager, onNavigate: (Screen) -> Un
                         gestureNav = it
                         systemManager.setGestureNavigation(it)
                     }
+                )
+                HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                SettingItem(
+                    icon = Phosphor.GearSix,
+                    title = stringResource(R.string.key_remap_title),
+                    subtitle = stringResource(R.string.key_remap_subtitle),
+                    onClick = { onNavigate(Screen.KEY_REMAP) }
                 )
             }
         }
@@ -8802,28 +8873,9 @@ fun SystemUpdateSubScreen(systemManager: RealSystemManager, onBack: () -> Unit) 
     val appVersion = remember { systemManager.getAppVersionName() }
     val officialBuild = remember { systemManager.isOfficialBuild() }
 
-    var isChecking by remember { mutableStateOf(false) }
-    var lastCheckResult by remember { mutableStateOf("Система актуальна") }
-
-    var autoCheck by remember { mutableStateOf(systemManager.isAutoCheckUpdatesOn()) }
-    var wifiOnly by remember { mutableStateOf(systemManager.isUpdateOnlyOverWifiOn()) }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: android.net.Uri? ->
-        if (uri != null) {
-            Toast.makeText(context, "Локальный файл: ${uri.lastPathSegment}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    if (isChecking) {
-        LaunchedEffect(isChecking) {
-            kotlinx.coroutines.delay(1200)
-            isChecking = false
-            lastCheckResult = "Установлены все актуальные компоненты"
-            Toast.makeText(context, "Обновлений не найдено", Toast.LENGTH_SHORT).show()
-        }
-    }
+    // OTA-сервера у этой сборки нет: ни адреса манифеста, ни клиента.
+    // Поэтому проверка обновлений честно недоступна, а не имитируется.
+    val updateState = "Проверка недоступна: в прошивке нет OTA-сервера"
 
 Box(
         modifier = Modifier
@@ -8857,23 +8909,7 @@ Box(
                     fontSize = 17.sp,
                     color = TextPrimary
                 )
-                IconButton(
-                    onClick = {
-                        try {
-                            filePickerLauncher.launch(arrayOf("*/*"))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Файловый менеджер недоступен", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Phosphor.DotsThreeVertical,
-                        contentDescription = "Опции",
-                        tint = TextPrimary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                Spacer(modifier = Modifier.size(40.dp))
             }
 
             LazyColumn(
@@ -8954,7 +8990,7 @@ Box(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = lastCheckResult,
+                            text = updateState,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = TextPrimary
@@ -8983,27 +9019,13 @@ Box(
                 // Дополнительные параметры
                 item {
                     Spacer(modifier = Modifier.height(20.dp))
-                    SettingCardGroup {
-                        SettingToggleRow(
-                            title = "Автозагрузка обновлений",
-                            subtitle = "Загружать новые пакеты только через Wi-Fi",
-                            checked = wifiOnly,
-                            onCheckedChange = {
-                                wifiOnly = it
-                                systemManager.setUpdateOnlyOverWifi(it)
-                            }
-                        )
-                        HorizontalDivider(color = BorderColor, thickness = 1.dp)
-                        SettingToggleRow(
-                            title = "Автоматическая проверка",
-                            subtitle = "Уведомлять при выходе стабильных версий",
-                            checked = autoCheck,
-                            onCheckedChange = {
-                                autoCheck = it
-                                systemManager.setAutoCheckUpdates(it)
-                            }
-                        )
-                    }
+                    Text(
+                        text = "Автоматическая проверка и загрузка обновлений выключены: " +
+                            "в прошивке нет OTA-клиента и адреса манифеста. Обновление " +
+                            "выполняется перепрошивкой system-образа.",
+                        fontSize = 12.sp,
+                        color = TextTertiary
+                    )
                 }
             }
         }
@@ -9025,35 +9047,15 @@ Box(
                     .fillMaxWidth()
                     .height(56.dp)
                     .clip(RoundedCornerShape(28.dp))
-                    .background(BorderBold)
-                    .clickable(enabled = !isChecking) {
-                        isChecking = true
-                    },
+                    .background(BorderColor),
                 contentAlignment = Alignment.Center
             ) {
-                if (isChecking) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            color = PaperBackground,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Проверка обновлений...",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PaperBackground
-                        )
-                    }
-                } else {
-                    Text(
-                        text = "Проверить обновления",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PaperBackground
-                    )
-                }
+                Text(
+                    text = "OTA-сервер не настроен",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextTertiary
+                )
             }
         }
     }
@@ -9229,10 +9231,18 @@ fun WirelessDebuggingSubScreen(
 @Composable
 fun AboutPhoneScreen(
     systemManager: RealSystemManager,
-    selectedRoot: String,
     onBack: () -> Unit,
     onOpenRootProvider: () -> Unit
 ) {
+    var rootSubtitle by remember { mutableStateOf("Проверка…") }
+    LaunchedEffect(Unit) {
+        val info = withContext(Dispatchers.IO) { systemManager.getRootInfo() }
+        rootSubtitle = when {
+            !info.available -> "Не обнаружен"
+            info.version != null -> "${info.provider} ${info.version}"
+            else -> info.provider ?: "Не обнаружен"
+        }
+    }
     val realModel = remember { systemManager.getRealDeviceModel() }
     val realManufacturer = remember { systemManager.getRealManufacturer() }
     val realAndroid = remember { systemManager.getRealAndroidVersion() }
@@ -9266,7 +9276,7 @@ fun AboutPhoneScreen(
                 SettingItem(
                     icon = Phosphor.GearSix,
                     title = stringResource(R.string.root_provider_title),
-                    subtitle = selectedRoot,
+                    subtitle = rootSubtitle,
                     onClick = onOpenRootProvider
                 )
             }
@@ -9291,30 +9301,50 @@ fun AboutPhoneScreen(
 
 @Composable
 fun RootProviderScreen(
-    selectedRoot: String,
-    onSelectRoot: (String) -> Unit,
+    systemManager: RealSystemManager,
     onBack: () -> Unit
 ) {
-    val context = LocalContext.current
+    var info by remember { mutableStateOf<RealSystemManager.RootInfo?>(null) }
+    LaunchedEffect(Unit) {
+        info = withContext(Dispatchers.IO) { systemManager.getRootInfo() }
+    }
+
     val rootOptions = listOf(
-        "None" to "Стандартная чистая среда. Проходит все проверки SafetyNet / Play Integrity.",
-        "KernelSU" to "Рут на уровне ядра Linux. Максимально скрытный, безопасный и чистый.",
-        "Magisk" to "Systemless root с поддержкой модулей Zygisk и Shamiko.",
-        "APatch" to "Современный рут-фреймворк на базе ядра KernelPatch."
+        "None" to "Без root. Проходит проверки целостности, но недоступны привилегированные операции.",
+        "KernelSU" to "Root на уровне ядра Linux.",
+        "Magisk" to "Systemless root с модулями и Zygisk.",
+        "APatch" to "Root-фреймворк на базе KernelPatch."
     )
 
     SubScreenScaffold(title = stringResource(R.string.root_provider_title), onBack = onBack) {
         item {
             SettingCardGroup {
+                SettingSimpleRow(
+                    title = "Обнаружено в системе",
+                    subtitle = when {
+                        info == null -> "Проверка…"
+                        !info!!.available -> "Root не предоставлен этому приложению"
+                        info!!.version != null -> "${info!!.provider} · ${info!!.version}"
+                        else -> info!!.provider ?: "su"
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Сменить провайдера из приложения нельзя: это замена boot-образа " +
+                    "и перезагрузка. Список ниже — справочный.",
+                fontSize = 12.sp,
+                color = TextTertiary
+            )
+        }
+
+        item {
+            SettingCardGroup {
                 rootOptions.forEachIndexed { index, (name, description) ->
-                    val isSelected = selectedRoot == name
+                    val isCurrent = info?.available == true && info?.provider == name
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                onSelectRoot(name)
-                                Toast.makeText(context, "$name выбран", Toast.LENGTH_SHORT).show()
-                            }
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -9324,15 +9354,13 @@ fun RootProviderScreen(
                             Text(text = description, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp, color = TextSecondary)
                         }
 
-                        if (isSelected) {
-                        Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .border(1.dp, BorderBold, RoundedCornerShape(12.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(imageVector = Phosphor.Check, contentDescription = "Selected", modifier = Modifier.size(14.dp), tint = BorderBold)
-                            }
+                        if (isCurrent) {
+                            Text(
+                                text = "используется",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextSecondary
+                            )
                         }
                     }
 

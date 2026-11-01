@@ -118,4 +118,10 @@
     <string name="security_patch_label">Обновление безопасности</string>
     <string name="root_current_label">Текущий Root-менеджер</string>
     <string name="processor_label">Процессор</string>
+
+    <!-- Переназначение клавиш -->
+    <string name="key_remap_title">Переназначение клавиш</string>
+    <string name="key_remap_subtitle">Долгое, двойное и тройное нажатие, свои интенты</string>
+    <string name="key_remap_service_label">Переназначение клавиш</string>
+    <string name="key_remap_service_description">Перехватывает аппаратные клавиши для действий пользователя. Не читает содержимое экрана.</string>
 </resources>

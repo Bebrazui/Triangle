@@ -2618,17 +2618,18 @@ class RealSystemManager(private val context: Context) {
         }
     }
 
+    private val suPaths = listOf(
+        "su",
+        "/debug_ramdisk/su",
+        "/system_ext/bin/su",
+        "/product/bin/su",
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/data/adb/magisk/magisk",
+        "/data/adb/ksu/bin/su"
+    )
+
     fun executeRootCommand(cmd: String): Boolean {
-        val suPaths = listOf(
-            "su",
-            "/debug_ramdisk/su",
-            "/system_ext/bin/su",
-            "/product/bin/su",
-            "/system/bin/su",
-            "/system/xbin/su",
-            "/data/adb/magisk/magisk",
-            "/data/adb/ksu/bin/su"
-        )
         for (su in suPaths) {
             try {
                 val proc = Runtime.getRuntime().exec(arrayOf(su, "-c", cmd))
@@ -2637,6 +2638,44 @@ class RealSystemManager(private val context: Context) {
             } catch (e: Exception) { /* try next path */ }
         }
         return false
+    }
+
+    /** Выполняет команду от root и возвращает stdout (null, если root недоступен). */
+    fun runRootForOutput(cmd: String): String? {
+        for (su in suPaths) {
+            try {
+                val proc = Runtime.getRuntime().exec(arrayOf(su, "-c", cmd))
+                val output = proc.inputStream.bufferedReader().use { it.readText() }.trim()
+                val finished = proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+                if (finished && proc.exitValue() == 0) return output
+            } catch (e: Exception) { /* try next path */ }
+        }
+        return null
+    }
+
+    data class RootInfo(
+        val available: Boolean,
+        val provider: String?,
+        val version: String?
+    )
+
+    /**
+     * Какой root-фреймворк реально работает. Список в UI строится из этого,
+     * а не из воображаемого выбора: сменить провайдера из приложения нельзя.
+     */
+    fun getRootInfo(): RootInfo {
+        if (!isRootAvailable()) return RootInfo(false, null, null)
+        runRootForOutput("magisk -v")?.takeIf { it.isNotBlank() }?.let {
+            return RootInfo(true, "Magisk", it)
+        }
+        runRootForOutput("ksud -V")?.takeIf { it.isNotBlank() }?.let {
+            return RootInfo(true, "KernelSU", it)
+        }
+        runRootForOutput("apd -V")?.takeIf { it.isNotBlank() }?.let {
+            return RootInfo(true, "APatch", it)
+        }
+        // root есть, но CLI-утилита не ответила (например, su от прошивки).
+        return RootInfo(true, "su", null)
     }
 
     fun forceStopPackage(pkg: String): Boolean {

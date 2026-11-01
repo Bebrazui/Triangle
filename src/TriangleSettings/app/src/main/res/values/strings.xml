@@ -118,4 +118,10 @@
     <string name="security_patch_label">Security patch level</string>
     <string name="root_current_label">Active Root manager</string>
     <string name="processor_label">Processor</string>
+
+    <!-- Key remapping -->
+    <string name="key_remap_title">Key remapping</string>
+    <string name="key_remap_subtitle">Long press, double and triple press, custom intents</string>
+    <string name="key_remap_service_label">Key remapping</string>
+    <string name="key_remap_service_description">Intercepts hardware keys for user-defined actions. Does not read screen content.</string>
 </resources>
